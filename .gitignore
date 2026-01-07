@@ -1,0 +1,8 @@
+build/
+data/
+.vscode/
+log/
+
+.github/
+main
+
