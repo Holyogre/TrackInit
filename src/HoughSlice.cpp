@@ -40,31 +40,53 @@ namespace track_project::trackinit
                     {
                         continue; // 速度超过最大值，跳过该点迹
                     }
-                    double angle_rad = std::acos(speed / track_project::velocity_max); // 计算夹角，弧度
+                    double angle_rad = std::acos(speed / track_project::velocity_max); // 计算夹角，弧度，必定为正数
                     // 计算两个可能的航向角度（南偏东）
-                    double base_angle = std::atan2(rel_x, rel_y); // 基准角度，弧度
-                    double heading1 = base_angle + angle_rad;
-                    double heading2 = base_angle - angle_rad;
-                    //TODO 明天写一个索引和角度互相转换的函数
-
-                    // 遍历所有角度，计算对应的距离截距
-                    for (std::uint32_t angle_idx = 0; angle_idx < ANGLE_BINS; ++angle_idx)
+                    double beta = std::atan2(rel_y, rel_x);
+                    if (point.doppler > 0) // 速度是正值时是靠近雷达站的，此时需要对beta加π；操作后值域为(0,2*pi)，无需归一化
                     {
-                        //TODO 明天写航向的判断，限制在某个范围内
-
-                        double theta = angle_idx * SLICEHOUGH_ANGLE_RESOLUTION_DEG * M_PI / 180.0; // 转为弧度
-                        double distance = rel_x * std::cos(theta) + rel_y * std::sin(theta);
-
-                        // 计算距离索引
-                        int distance_idx = static_cast<int>((distance + SLICEHOUGH_CLUSTER_RADIUS_KM) / SLICEHOUGH_DIST_RESOLUTION_KM);
-                        if (distance_idx < 0 || distance_idx >= static_cast<int>(DISTANCE_BINS))
+                        beta += M_PI;
+                        if (beta >= 2 * M_PI)
                         {
-                            continue; // 距离索引越界，跳过
+                            beta -= 2 * M_PI;
                         }
-
-                        // 在对应位置投票，使用8位存储不同批次的信息
-                        it_clust->vote_area[angle_idx][distance_idx] += (1 << (batch * 8));
                     }
+                    else // 不然，值域为(-pi,pi)，需要归一化到(0,2*pi)
+                    {
+                        if (beta < 0)
+                        {
+                            beta += 2 * M_PI;
+                        }
+                    }
+                    double heading1 = beta - angle_rad;
+                    double heading2 = beta + angle_rad;
+                    //  区间为(heading1,heading2)∪(heading3,heading4)，且heading1<=heading2<=heading3<=heading4
+                    if (heading1 < 0) // 仅有可能heading1小于0
+                    {
+                        double heading3 = 0.0, heading4 = 2 * M_PI;
+                        heading3 = heading1 + 2 * M_PI; // 调整到正区间
+                        heading4 = 2 * M_PI;
+                        heading1 = 0.0;
+                        heading2 = heading2;
+                        voteInHoughSpace(heading1, heading2, rel_x, rel_y, batch, *it_clust);
+                        voteInHoughSpace(heading3, heading4, rel_x, rel_y, batch, *it_clust);
+                    }
+                    else if (heading2 > 2 * M_PI) // 仅有可能heading2大于2π
+                    {
+                        double heading3 = 0.0, heading4 = 2 * M_PI;
+                        heading3 = heading1;
+                        heading4 = 2 * M_PI;
+                        heading1 = 0.0;
+                        heading2 = heading2 - 2 * M_PI;
+                        voteInHoughSpace(heading1, heading2, rel_x, rel_y, batch, *it_clust);
+                        voteInHoughSpace(heading3, heading4, rel_x, rel_y, batch, *it_clust);
+                    }
+                    else
+                    {
+                        voteInHoughSpace(heading1, heading2, rel_x, rel_y, batch, *it_clust);
+                    }
+
+                    // TODO 做成一个投票函数，解耦合，遍历所有角度，计算对应的距离截距
                 }
             }
         }
@@ -72,6 +94,32 @@ namespace track_project::trackinit
         // TODO 准备明天写峰值检测和航迹生成部分
 
         return ProcessStatus::SUCCESS;
+    }
+
+    void SliceHough::voteInHoughSpace(double heading_start, double heading_end, double rel_x, double rel_y, size_t batch, Slice &it_clust)
+    {
+        // 计算起始和结束的角度索引
+        std::uint32_t angle_idx_start = static_cast<std::uint32_t>(heading_start * 180.0 / M_PI / SLICEHOUGH_ANGLE_RESOLUTION_DEG);
+        std::uint32_t angle_idx_end = static_cast<std::uint32_t>(heading_end * 180.0 / M_PI / SLICEHOUGH_ANGLE_RESOLUTION_DEG);
+
+        // 遍历所有聚类区域，进行投票
+        std::vector<Slice *> clustAera_list = ClustArea.get_allocated_ptrs();
+        for (std::uint32_t angle_idx = angle_idx_start; angle_idx < angle_idx_end; ++angle_idx)
+        {
+
+            double theta = angle_idx * SLICEHOUGH_ANGLE_RESOLUTION_DEG * M_PI / 180.0; // 转为弧度
+            double distance = rel_x * std::cos(theta) + rel_y * std::sin(theta);
+
+            // 计算距离索引
+            int distance_idx = static_cast<int>((distance + SLICEHOUGH_CLUSTER_RADIUS_KM) / SLICEHOUGH_DIST_RESOLUTION_KM);
+            if (distance_idx < 0 || distance_idx >= static_cast<int>(DISTANCE_BINS))
+            {
+                continue; // 距离索引越界，跳过
+            }
+
+            // 在对应位置投票，使用8位存储不同批次的信息
+            it_clust.vote_area[angle_idx][distance_idx] += (1 << (batch * 8));
+        }
     }
 
     // 先剔除在聚类中心的点，再剔除离群点，最后对剩余点进行聚类

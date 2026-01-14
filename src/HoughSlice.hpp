@@ -37,7 +37,7 @@ namespace track_project::trackinit
             int current_batch_index;                           // 当前批次索引，从0开始
             std::array<std::vector<TrackPoint>, 4> point_list; // 历史点迹检索
             double center_x, center_y;                         // 聚类中心点坐标
-            //角度索引依据南偏东做分割，正南索引为0，是射线而非直线；截距索引依据负到正做分割，0点为 -R，2R点为 +R
+            // 角度索引依据南偏东做分割，正南索引为0，是射线而非直线；截距索引依据负到正做分割，0点为 -R，2R点为 +R
             std::uint32_t vote_area[static_cast<std::uint32_t>(ANGLE_BINS)][static_cast<std::uint32_t>(DISTANCE_BINS)];
 
             // 为ObjectPool添加clear方法
@@ -95,9 +95,17 @@ namespace track_project::trackinit
          * @param slice 单个切面
          * @param angle_idx 角度索引
          * @param distance_idx 距离索引
-         * @return 
+         * @return
          *****************************************************************************/
         std::uint32_t peak_filter(const Slice &slice, size_t angle_idx, size_t distance_idx) const;
+
+        /*****************************************************************************
+         * @brief 在霍夫空间中投票
+         *
+         * @param heading_start 起始航向角度，单位弧度
+         * @param heading_end 结束航向角度，单位弧度
+         *****************************************************************************/
+        void voteInHoughSpace(double heading_start, double heading_end, double rel_x, double rel_y, size_t batch, Slice &it_clust);
 
     private:
         ObjectPool<Slice> ClustArea;
