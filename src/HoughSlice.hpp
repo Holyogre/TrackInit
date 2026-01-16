@@ -4,11 +4,18 @@
  * @author xjl (xjl20011009@126.com)
  * @brief 特点：
  * 1、对于每个点迹聚集区域，创建霍夫变换切面，每个切面只处理该区域内的点迹
- * 2、对于时间序列点迹，不同时刻的信息保留在不同位中，各占据8bit
- * 3、对于角度约束，使用doppler和最大速度进行约束
- *
- * @version 0.1
- * @date 2025-12-10
+ * 2、对于时间序列点迹，不同时刻、不同多普勒速度的信息保留在不同位中，每批次数据占据16bits，分别表示是否存在对应的多普勒速度
+ * 3、对于角度约束，使用doppler和最大速度进行约束，同时基于多普勒速度一致性去寻找点迹
+ *时间复杂度    分析：
+ * 聚类生成：O(N)
+
+霍夫投票：O(N × 角度分辨率)
+
+峰值检测：O(θ维度 × ρ维度 × 16)
+
+点迹回溯：O(峰值数 × 4 × 平均点迹数)
+ * @version 0.2
+ * @date 2025-12-17
  *
  * @copyright Copyright (c) 2025
  *
@@ -28,17 +35,17 @@ namespace track_project::trackinit
         friend struct SliceHoughBenchAccessor;
 
     private:
-        // 角度和距离离散化参数
-        static constexpr size_t ANGLE_BINS = 360 / SLICEHOUGH_ANGLE_RESOLUTION_DEG;
-        static constexpr size_t DISTANCE_BINS = 2 * SLICEHOUGH_CLUSTER_RADIUS_KM / SLICEHOUGH_DIST_RESOLUTION_KM;
+        // 航向角和截距离散化参数
+        static constexpr size_t HOUGH_THETA_DIM = 360 / SLICEHOUGH_THETA_RESOLUTION_DEG;
+        static constexpr size_t HOUGH_RHO_DIM = 2 * SLICEHOUGH_CLUSTER_RADIUS_KM / SLICEHOUGH_RHO_RESOLUTION_KM;
 
         struct Slice // 单个切面的内容
         {
             int current_batch_index;                           // 当前批次索引，从0开始
             std::array<std::vector<TrackPoint>, 4> point_list; // 历史点迹检索
             double center_x, center_y;                         // 聚类中心点坐标
-            // 角度索引依据南偏东做分割，正南索引为0，是射线而非直线；截距索引依据负到正做分割，0点为 -R，2R点为 +R
-            std::uint32_t vote_area[static_cast<std::uint32_t>(ANGLE_BINS)][static_cast<std::uint32_t>(DISTANCE_BINS)];
+            // 角度索引依据北偏东做分割，正北索引为0，是射线而非直线；截距索引依据负到正做分割，0点为 -R，2R点为 +R
+            std::array<std::array<std::uint64_t, HOUGH_RHO_DIM>, HOUGH_THETA_DIM> vote_area;
 
             // 为ObjectPool添加clear方法
             void clear()
@@ -56,7 +63,7 @@ namespace track_project::trackinit
                 center_y = 0.0;
 
                 // 清零vote_area
-                std::memset(vote_area, 0, sizeof(vote_area));
+                vote_area = {};
             }
         };
 
@@ -87,7 +94,38 @@ namespace track_project::trackinit
          *
          * @param points 传进来的点迹
          *****************************************************************************/
-        void clust_gen(const std::vector<TrackPoint> &points);
+        void process_cluster_generation(const std::vector<TrackPoint> &points);
+
+        /*****************************************************************************
+         * @brief 对于单个点迹进行霍夫变换投票
+         *
+         * @param batch 当前批次索引
+         * @param point 当前点迹
+         * @param it_clust 当前聚类区域
+         *****************************************************************************/
+        void process_point_for_hough_vote(size_t batch, const TrackPoint &point, Slice &it_clust);
+
+        /*****************************************************************************
+         * @brief 对于霍夫变换中的特定区域执行投票
+         *
+         * @param heading_start 起始航向角度，单位弧度
+         * @param heading_end 结束航向角度，单位弧度
+         * @param rel_x 点迹相对于聚类中心的x坐标，单位km
+         * @param rel_y 点迹相对于聚类中心的y坐标，单位km
+         * @param batch 当前批次索引
+         * @param vote_area 投票区域，位于Slice结构体内
+         *****************************************************************************/
+        void vote_in_hough_space(const double heading_start, const double heading_end, const double doppler,
+                                 const double rel_x, const double rel_y, const size_t batch,
+                                 std::array<std::array<std::uint64_t, HOUGH_RHO_DIM>, HOUGH_THETA_DIM> &vote_area);
+
+        /*****************************************************************************
+         * @brief 从霍夫变换空间中提取峰值，返回检测到的直线参数列表
+         *
+         * @param cluster 单个霍夫变换切面
+         * @return std::vector<std::array<double, 3>> 检测到的直线参数列表，每个元素为(theta, rho, doppler)
+         *****************************************************************************/
+        std::vector<std::array<double, 3>> process_extract_peak_from_hough_space(Slice &cluster) const;
 
         /*****************************************************************************
          * @brief 峰值过滤器，从霍夫变换空间中检测峰值，并推算峰值数量
@@ -95,17 +133,21 @@ namespace track_project::trackinit
          * @param slice 单个切面
          * @param angle_idx 角度索引
          * @param distance_idx 距离索引
-         * @return
+         * @param vote_area 投票区域，位于Slice结构体内
+         * @return 返回一个峰值投票数，将速度均匀分成16份，每一位表示该位置上是否有对应速度点存在
          *****************************************************************************/
-        std::uint32_t peak_filter(const Slice &slice, size_t angle_idx, size_t distance_idx) const;
+        std::uint16_t peak_filter(const size_t angle_idx, const size_t distance_idx,
+                                  std::array<std::array<std::uint64_t, HOUGH_RHO_DIM>, HOUGH_THETA_DIM> &vote_area) const;
 
         /*****************************************************************************
-         * @brief 在霍夫空间中投票
+         * @brief 回溯点迹，依据检测到的直线参数，从聚类中提取符合条件的点迹，组成航迹
          *
-         * @param heading_start 起始航向角度，单位弧度
-         * @param heading_end 结束航向角度，单位弧度
+         * @param detected_lines 检测到的直线参数列表
+         * @param cluster 单个霍夫变换切面
+         * @param new_track 输出航迹列表
          *****************************************************************************/
-        void voteInHoughSpace(double heading_start, double heading_end, double rel_x, double rel_y, size_t batch, Slice &it_clust);
+        void process_backtrack_points(const std::vector<std::array<double, 3>> &detected_lines, const Slice &cluster,
+                                      std::vector<std::array<TrackPoint, 4>> &new_track);
 
     private:
         ObjectPool<Slice> ClustArea;
