@@ -52,7 +52,14 @@ namespace track_project::trackinit
         // 发送航迹
         // TODO
 
-        //删除已经执行过航迹生成的霍夫变换切片
+        // 删除已经执行过航迹生成的霍夫变换切片
+        for (auto &it_clust : clustAera_list)
+        {
+            if (it_clust->current_batch_index == 3)
+            {
+                ClustArea.release_target(it_clust);
+            }
+        }
 
         return ProcessStatus::SUCCESS;
     }
@@ -97,7 +104,7 @@ namespace track_project::trackinit
         }
 
         // 拆分聚类
-        std::vector<std::vector<size_t>> _clust = dbscan(unvisited_points, SLICEHOUGH_CLUSTER_RADIUS_KM / 2.0, 3);
+        std::vector<std::vector<size_t>> _clust = dbscan(unvisited_points, SLICEHOUGH_CORE_POINT_RADIUS_KM, 3);
 
         // 计算相关参数，申请新的聚类空间
         for (const auto &cluster : _clust)
@@ -146,7 +153,7 @@ namespace track_project::trackinit
         {
             return; // 速度超过最大值，跳过该点迹
         }
-        double angle_rad = std::acos(speed / track_project::velocity_max); // 计算夹角，弧度，必定为正数
+        double angle_rad = std::acos(speed / track_project::velocity_max); // 计算夹角，弧度，范围[0,pi/2]
         // 计算两个可能的航向角度（南偏东）
         double beta = std::atan2(rel_y, rel_x);
         if (point.doppler > 0) // 速度是正值时是靠近雷达站的，此时需要对beta加π；操作后值域为(0,2*pi)，无需归一化
@@ -170,9 +177,10 @@ namespace track_project::trackinit
         //  区间为(heading1,heading2)∪(heading3,heading4)，且heading1<=heading2<=heading3<=heading4
         if (heading1 < 0) // 仅有可能heading1小于0
         {
-            double heading3 = 0.0, heading4 = 2 * M_PI;
-            heading3 = heading1 + 2 * M_PI; // 调整到正区间
-            heading4 = 2 * M_PI;
+            double heading3 = 0.0, heading4 = M_PI;
+            // 射线方向性可以由doppler确定，故可以将区间调整为(0,heading2)∪(heading3+π,π)
+            heading3 = heading1 + M_PI;
+            heading4 = M_PI;
             heading1 = 0.0;
             heading2 = heading2;
             vote_in_hough_space(heading1, heading2, rel_x, rel_y, batch, point.doppler, it_clust.vote_area);
@@ -180,9 +188,10 @@ namespace track_project::trackinit
         }
         else if (heading2 > 2 * M_PI) // 仅有可能heading2大于2π
         {
-            double heading3 = 0.0, heading4 = 2 * M_PI;
-            heading3 = heading1;
-            heading4 = 2 * M_PI;
+            double heading3 = 0.0, heading4 = M_PI;
+            // 射线方向性可以由doppler确定，由angle_rad保证heading3必然位于(π,2π)，故区间为(0,heading2-2π)∪(heading1-π,π)
+            heading3 = heading1 - M_PI;
+            heading4 = M_PI;
             heading1 = 0.0;
             heading2 = heading2 - 2 * M_PI;
             vote_in_hough_space(heading1, heading2, rel_x, rel_y, batch, point.doppler, it_clust.vote_area);

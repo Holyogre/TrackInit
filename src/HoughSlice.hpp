@@ -35,16 +35,17 @@ namespace track_project::trackinit
         friend struct SliceHoughBenchAccessor;
 
     private:
-        // 航向角和截距离散化参数
-        static constexpr size_t HOUGH_THETA_DIM = 360 / SLICEHOUGH_THETA_RESOLUTION_DEG;
-        static constexpr size_t HOUGH_RHO_DIM = 2 * SLICEHOUGH_CLUSTER_RADIUS_KM / SLICEHOUGH_RHO_RESOLUTION_KM;
+        // 航向角离散化参数，由于doppler位的引入，射线方向无意义，仅需"直线与y轴夹角":\alpha、"多普勒速度":doppler即可确定航向
+        static constexpr size_t HOUGH_THETA_DIM = 180 / SLICEHOUGH_THETA_RESOLUTION_DEG;
+        // 截距离散化参数，依据聚类判定直径2*1.41*RADIUS近似计算得到
+        static constexpr size_t HOUGH_RHO_DIM = 4 * SLICEHOUGH_CLUSTER_RADIUS_KM / SLICEHOUGH_RHO_RESOLUTION_KM;
 
         struct Slice // 单个切面的内容
         {
             int current_batch_index;                           // 当前批次索引，从0开始
             std::array<std::vector<TrackPoint>, 4> point_list; // 历史点迹检索
             double center_x, center_y;                         // 聚类中心点坐标
-            // 角度索引依据北偏东做分割，正北索引为0，是射线而非直线；截距索引依据负到正做分割，0点为 -R，2R点为 +R
+            // 角度索引依据北偏东做分割，正北索引为0，是射线而非直线；截距索引依据负到正做分割，0点为 -2R，2R点为 +2R //TODO
             std::array<std::array<std::uint64_t, HOUGH_RHO_DIM>, HOUGH_THETA_DIM> vote_area;
 
             // 为ObjectPool添加clear方法

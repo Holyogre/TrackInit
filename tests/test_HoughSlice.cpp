@@ -24,8 +24,8 @@ namespace track_project::trackinit
 {
     struct SliceHoughBenchAccessor
     {
-        static void run_gen_1(SliceHough &alg, const std::vector<TrackPoint> &pts) { alg.clust_gen(pts); } //原为clust_gen_1，经过测试，保留
-        static void run_gen_2(SliceHough &alg, const std::vector<TrackPoint> &pts) { alg.clust_gen(pts); } //原为clust_gen_2，经过测试，删除gen_2
+        // static void run_gen_1(SliceHough &alg, const std::vector<TrackPoint> &pts) { alg.clust_gen(pts); } //原为clust_gen_1，经过测试，保留
+        // static void run_gen_2(SliceHough &alg, const std::vector<TrackPoint> &pts) { alg.clust_gen(pts); } //原为clust_gen_2，经过测试，删除gen_2
     };
 }
 
