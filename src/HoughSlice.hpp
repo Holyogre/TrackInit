@@ -45,7 +45,7 @@ namespace track_project::trackinit
             int current_batch_index;                           // 当前批次索引，从0开始
             std::array<std::vector<TrackPoint>, 4> point_list; // 历史点迹检索
             double center_x, center_y;                         // 聚类中心点坐标
-            // 角度索引依据北偏东做分割，正北索引为0，是射线而非直线；截距索引依据负到正做分割，0点为 -2R，2R点为 +2R //TODO
+            // 角度索引依据北偏东做分割，正北索引为0，是射线而非直线；截距索引依据负到正做分割，0点为 -2R，2R点为 +2R
             std::array<std::array<std::uint64_t, HOUGH_RHO_DIM>, HOUGH_THETA_DIM> vote_area;
 
             // 为ObjectPool添加clear方法
@@ -69,8 +69,8 @@ namespace track_project::trackinit
         };
 
     public:
-        // 共计四批次，每个批次允许新增5个聚类
-        SliceHough() : ClustArea(5 * 4) {};
+        // 初始状态，预留20个聚类区域
+        SliceHough() : ClustArea(20) {};
         virtual ~SliceHough() noexcept = default;
 
         /*****************************************************************************

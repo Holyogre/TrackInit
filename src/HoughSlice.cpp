@@ -103,8 +103,8 @@ namespace track_project::trackinit
             }
         }
 
-        // 拆分聚类
-        std::vector<std::vector<size_t>> _clust = dbscan(unvisited_points, SLICEHOUGH_CORE_POINT_RADIUS_KM, 3);
+        // 新聚类
+        std::vector<std::vector<size_t>> _clust = dbscan(unvisited_points, SLICEHOUGH_CORE_POINT_RADIUS_KM, 2);
 
         // 计算相关参数，申请新的聚类空间
         for (const auto &cluster : _clust)
@@ -241,8 +241,8 @@ namespace track_project::trackinit
             double theta = angle_idx * SLICEHOUGH_THETA_RESOLUTION_DEG * M_PI / 180.0; // 转为弧度
             double distance = rel_x * std::cos(theta) + rel_y * std::sin(theta);
 
-            // 计算距离索引
-            int distance_idx = static_cast<int>((distance + SLICEHOUGH_CLUSTER_RADIUS_KM) / SLICEHOUGH_RHO_RESOLUTION_KM);
+            // 计算距离索引,distance范围[-2R,2R]
+            int distance_idx = static_cast<int>((distance + 2 * SLICEHOUGH_CLUSTER_RADIUS_KM) / SLICEHOUGH_RHO_RESOLUTION_KM);
             if (distance_idx < 0 || distance_idx >= static_cast<int>(HOUGH_RHO_DIM))
             {
                 continue; // 距离索引越界，跳过
@@ -288,7 +288,7 @@ namespace track_project::trackinit
 
                         // 计算theta和rho值
                         double theta = angle_idx * SLICEHOUGH_THETA_RESOLUTION_DEG * M_PI / 180.0; // 弧度
-                        double rho = distance_idx * SLICEHOUGH_RHO_RESOLUTION_KM - SLICEHOUGH_CLUSTER_RADIUS_KM;
+                        double rho = distance_idx * SLICEHOUGH_RHO_RESOLUTION_KM - 2 * SLICEHOUGH_CLUSTER_RADIUS_KM;
 
                         // 保存检测到的直线参数
                         detected_lines.push_back({theta, rho, doppler});
