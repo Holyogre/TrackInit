@@ -219,6 +219,9 @@ namespace track_project
         std::vector<std::pair<TrackerHeader, TrackPoint>> add_buffer_;
         std::vector<TrackPoint> draw_buffer_; // DRAW指令数据缓冲区
         std::mutex buffer_mutex_;
+
+        // 用于执行对应操作的回调函数
+        std::function<void()> merge_result_callback; // 航迹融合操作结果反馈函数
     };
 
 } // namespace track_project

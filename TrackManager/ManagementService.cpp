@@ -399,6 +399,8 @@ namespace track_project
             {
                 LOG_ERROR << "ManagementService: 添加点迹到航迹 " << header.track_id << " 失败:unknown" << std::endl;
             }
+
+            //TODO，向其他线程发送航迹情况
         }
     }
 

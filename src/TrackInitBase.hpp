@@ -20,11 +20,14 @@
 #include <array>
 #include <string>
 #include <cstdint>
+#include <functional>
 #include "../include/defstruct.h"
 #include "../include/def_init.h"
 
 namespace track_project::trackinit
 {
+    // 定义回调类型
+    using TrackCallback = std::function<void(std::vector<std::array<TrackPoint, 4>> &)>;
 
     /**
      * @brief 航迹起始算法抽象基类
@@ -46,7 +49,7 @@ namespace track_project::trackinit
          * @param new_track 输出参数，存储生成的新航迹
          * @return ErrorCode 错误码，SUCCESS表示成功，其他值表示具体错误
          */
-        virtual ProcessStatus process(const std::vector<TrackPoint> &points,std::vector<std::array<TrackPoint, 4>> &new_track) = 0;
+        virtual ProcessStatus process(const std::vector<TrackPoint> &points, std::vector<std::array<TrackPoint, 4>> &new_track) = 0;
 
         /**
          * @brief 重置算法状态
@@ -61,6 +64,9 @@ namespace track_project::trackinit
          * @return std::string 算法名称
          */
         virtual std::string get_name() const = 0;
+
+    protected:
+        TrackCallback trackCallback_; // 用于发送航迹数据
     };
 } // namespace track_project::track_init
 
