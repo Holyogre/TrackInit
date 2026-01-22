@@ -1,10 +1,11 @@
+#include <cassert>  //静态断言检查避免忘了用回调函数
+#include <algorithm> 
+#include <cmath> 
+
 #include "HoughSlice.hpp"
 #include "Func_dbscan.hpp"
 #include "../include/defsystem.h"
-#include <algorithm>
-#include <iostream>
-#include <cmath>
-#include <algorithm>
+#include "../utils/Logger.hpp"
 
 namespace track_project::trackinit
 {
@@ -49,8 +50,9 @@ namespace track_project::trackinit
             process_backtrack_points(detected_lines, *it_clust, new_track);
         }
 
-        // 发送航迹
-        // TODO
+        // 调用回调函数发送航迹
+        assert(trackCallback_ != nullptr && "HoughSlice类调用的时候没有绑定回调函数"); // debug模式下检查
+        trackCallback_(new_track);
 
         // 删除已经执行过航迹生成的霍夫变换切片
         for (auto &it_clust : clustAera_list)

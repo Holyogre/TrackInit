@@ -1,5 +1,6 @@
 # ==================== 基本配置 ====================
 cmake_minimum_required(VERSION 3.16)
+project(TrackManager LANGUAGES CXX)
 
 set(CMAKE_C_COMPILER "/usr/bin/gcc")
 set(CMAKE_CXX_COMPILER "/usr/bin/g++")
@@ -7,16 +8,12 @@ set(CMAKE_CXX_COMPILER "/usr/bin/g++")
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)  
 
-project(TrackManager LANGUAGES CXX)
-
-
-
 # ==================== 配置选项 ====================
 # cmake启动测试的指令，如果不用的话请注释
 enable_testing()  
 
-# 启动日志宏
-add_definitions(-DENABLE_SPDLOG)  
+# 日志配置（集中在一起）
+add_definitions(-DENABLE_SPDLOG)  # 启用日志宏
 
 # 指定日志目录（编译期），如果没有该路径则配置阶段直接失败
 set(TRACKMANAGER_DEFAULT_LOG_DIR "${PROJECT_SOURCE_DIR}/log")
@@ -28,23 +25,17 @@ endif()
 add_compile_definitions(TRACKMANAGER_DEFAULT_LOG_DIR=\"${TRACKMANAGER_DEFAULT_LOG_DIR}\")
 
 # ==================== 查找依赖包 ====================
+find_package(Threads REQUIRED)    # 添加线程支持
+find_package(spdlog REQUIRED)     # 查找 spdlog
+find_package(OpenCV REQUIRED)     # 查找 OpenCV
 
-# 添加线程支持
-find_package(Threads REQUIRED)
-
-# 查找 spdlog
-find_package(spdlog REQUIRED)
-
-# 查找 OpenCV
-find_package(OpenCV REQUIRED)
-
+# ==================== 收集源代码 ====================
+# 使用简单的GLOB收集方式，避免过于复杂的配置
+file(GLOB MYUTILS "utils/*.cpp" )
+file(GLOB SOURCES "src/*.cpp")  #现在写的文件，之后该称TRACKINIT_SOURCES
+file(GLOB TRACKMANAGER_SOURCES "TrackManager/*.cpp")
 
 # ==================== 可执行文件配置 ====================
-
-file(GLOB SOURCES "src/*.cpp")
-file(GLOB MYUTILS "utils/*.cpp")
-# 其余模块
-file(GLOB TRACKMANAGER_SOURCES "TrackManager/*.cpp")
 add_executable(main
     main.cpp
     ${SOURCES}
@@ -58,18 +49,15 @@ target_include_directories(main PUBLIC
     ${PROJECT_SOURCE_DIR}/src
     ${PROJECT_SOURCE_DIR}/utils
     ${PROJECT_SOURCE_DIR}/TrackManager
-    ${OpenCV_INCLUDE_DIRS}  # 添加 OpenCV 包含目录
+    ${OpenCV_INCLUDE_DIRS}
 )
 
 # 链接库
 target_link_libraries(main PUBLIC 
     spdlog::spdlog 
     Threads::Threads
-    "${OpenCV_LIBS}"  # 添加 OpenCV 库
+    "${OpenCV_LIBS}"
 )
-
-
-
 
 # ==================== 添加编译警告选项 ====================
 # if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
@@ -98,6 +86,11 @@ target_link_libraries(main PUBLIC
 # endif()
 
 
+# ==================== 共享配置（供tests目录使用） ====================
+# 设置全局变量（CACHE INTERNAL）
+set(MYUTILS_SOURCES ${MYUTILS_SOURCES} CACHE INTERNAL "utils目录下的所有源文件")
+set(SRC_SOURCES ${SRC_SOURCES} CACHE INTERNAL "src目录下的所有源文件")
+set(TRACKMANAGER_SOURCES ${TRACKMANAGER_SOURCES} CACHE INTERNAL "TrackManager目录下的所有源文件")
+
+# ==================== 测试配置 ====================
 add_subdirectory(tests)
-
-

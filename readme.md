@@ -141,3 +141,14 @@
      - vote_area的定义
      - 投票的位运算 process_vote_points_in_cluster()
      - 峰值提取的位运算 peak_filter()
+
+## 2026-01-22
+1. **HoughSlice发送航迹功能实现**
+   - 在 `process()` 函数中完成航迹发送逻辑，使用回调函数 `track_callback_` 将生成的航迹数据传递给外部系统。
+   - 已经观测到回调函数被正确调用，航迹数据（观测到航迹成功绘制）
+   - 修改了trackvisualizer的结构，现在是clear->draw->creat->add->merge的优先级顺序，避免乱位
+2. **HoughSlice单元测试编写**
+3. todo
+    - （一会儿删除） 午睡后补充下benchmark测试，看看回调函数用时如何
+    - 完善单元测试，覆盖更多边界情况和异常场景
+    - - 位扩展类的实现

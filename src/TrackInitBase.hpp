@@ -27,7 +27,7 @@
 namespace track_project::trackinit
 {
     // 定义回调类型
-    using TrackCallback = std::function<void(std::vector<std::array<TrackPoint, 4>> &)>;
+    using TrackCallback = std::function<void(std::vector<std::array<TrackPoint, 4>> &)>; // 直接复制一份，比较安全，存到调用方的命令队列里面去
 
     /**
      * @brief 航迹起始算法抽象基类
@@ -42,32 +42,44 @@ namespace track_project::trackinit
     public:
         virtual ~TrackInitBase() = default;
 
-        /**
+        friend class testTrackInitBase; // 友元测试类
+
+        /*****************************************************************************
          * @brief 处理点迹数据，生成新航迹
          *
          * @param points 输入点迹数据，包含所有待处理的TrackPoint
          * @param new_track 输出参数，存储生成的新航迹
          * @return ErrorCode 错误码，SUCCESS表示成功，其他值表示具体错误
-         */
+         *****************************************************************************/
         virtual ProcessStatus process(const std::vector<TrackPoint> &points, std::vector<std::array<TrackPoint, 4>> &new_track) = 0;
 
-        /**
+        /*****************************************************************************
          * @brief 重置算法状态
          *
          * 当config里面请求的算法不变的时候，调用clear_all，不然，调用析构函数
-         */
+         *****************************************************************************/
         virtual void clear_all() = 0;
 
-        /**
+        /*****************************************************************************
          * @brief 获取算法名称（用于日志和调试）
          *
          * @return std::string 算法名称
-         */
+         *****************************************************************************/
         virtual std::string get_name() const = 0;
+
+        /*****************************************************************************
+         * @brief 设置航迹的回调函数
+         *
+         * @param callback 回调函数，用于发送航迹数据
+         *****************************************************************************/
+        virtual void set_track_callback(TrackCallback callback)
+        {
+            trackCallback_ = callback;
+        }
 
     protected:
         TrackCallback trackCallback_; // 用于发送航迹数据
     };
-} // namespace track_project::track_init
+} // namespace track_project::trackinit
 
 #endif // _TRACK_INIT_BASE_HPP_

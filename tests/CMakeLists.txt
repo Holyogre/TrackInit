@@ -1,7 +1,9 @@
 find_package(Catch2 REQUIRED CONFIG HINTS "/usr/local/lib/cmake/Catch2") 
 
+
+# ==================== 测试函数 ====================
 # 定义一个函数来简化测试目标的创建
-function(add_trackermanager_test TEST_NAME SOURCE_FILE)
+function(add_track_test TEST_NAME SOURCE_FILE)
     # 捕获额外参数作为编译文件名
     set(IMPL_FILES ${ARGN})
 
@@ -15,6 +17,7 @@ function(add_trackermanager_test TEST_NAME SOURCE_FILE)
         ${CMAKE_SOURCE_DIR}/src
         ${CMAKE_SOURCE_DIR}/utils  # 添加 utils 包含路径
         ${CMAKE_SOURCE_DIR}/include
+        ${CMAKE_SOURCE_DIR}/TrackManager
         ${OpenCV_INCLUDE_DIRS}  # 添加 OpenCV 包含目录
     )
 
@@ -42,19 +45,27 @@ endfunction()
 
 
 # 使用函数添加测试
-add_trackermanager_test(testObjectPool
-                test_ObjectPool.cpp
-                ../src/ObjectPool.hpp)
-add_trackermanager_test(test_ClustDBSCAN
-                test_ClustDBSCAN.cpp
-                ../src/Func_dbscan.cpp)
-add_trackermanager_test(test_HoughSlice
-                test_HoughSlice.cpp
+# add_track_test(testObjectPool
+#                 test_ObjectPool.cpp
+#                 ../src/ObjectPool.hpp)
+# add_track_test(test_ClustDBSCAN
+#                 test_ClustDBSCAN.cpp
+#                 ../src/Func_dbscan.cpp)
+# add_track_test(test_HoughSlice
+#                 test_HoughSlice.cpp
+#                 ../src/HoughSlice.cpp
+#                 ../src/Func_dbscan.cpp)
+add_track_test(test_callback
+                test_trackinit_callback.cpp
+                ${MYUTILS_SOURCES}
+                ${TRACKMANAGER_SOURCES}
                 ../src/HoughSlice.cpp
-                ../src/Func_dbscan.cpp)
+                ../src/Func_dbscan.cpp
+                )
 
 
 # 注册数据层滚动
 # add_test(NAME testObjectPool功能测试 COMMAND testObjectPool "[memory_pool][]")
 # add_test(NAME ClustDBSCAN COMMAND test_ClustDBSCAN "[dbscan][]")
-add_test(NAME HoughSlice功能测试 COMMAND test_HoughSlice "[clust_gen][]")
+# add_test(NAME HoughSlice功能测试 COMMAND test_HoughSlice "[clust_gen][]")
+add_test(NAME trackinit回调函数测试 COMMAND test_callback "[basic]")

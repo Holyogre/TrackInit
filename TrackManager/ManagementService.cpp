@@ -31,7 +31,7 @@ namespace track_project
      *****************************************************************************/
     ManagementService::ManagementService(std::uint32_t track_size, std::uint32_t point_size)
         : tracker_manager_(track_size, point_size),
-          track_visualizer_(119.9, 120.1, 29.9, 30.1, track_size, point_size),
+          track_visualizer_(0, 0.2, 0, 0.2, track_size, point_size),
           stop_flag_(false)
     {
         // 启动工作线程
@@ -175,11 +175,11 @@ namespace track_project
             // 按照优先级顺序处理指令
             bool processed = false;
 
+            // 处理CLEAR_ALL指令（如果有）
+            processed |= process_commands_by_type(CommandType::CLEAR_ALL);
+
             // 处理所有DRAW指令（优先级最高）
             processed |= process_commands_by_type(CommandType::DRAW);
-
-            // 处理所有MERGE指令
-            processed |= process_commands_by_type(CommandType::MERGE);
 
             // 处理所有CREATE指令
             processed |= process_commands_by_type(CommandType::CREATE);
@@ -187,8 +187,8 @@ namespace track_project
             // 处理所有ADD指令
             processed |= process_commands_by_type(CommandType::ADD);
 
-            // 处理CLEAR_ALL指令（如果有）
-            processed |= process_commands_by_type(CommandType::CLEAR_ALL);
+            // 处理所有MERGE指令
+            processed |= process_commands_by_type(CommandType::MERGE);
 
             // 绘制航迹（显示当前状态）
             track_visualizer_.draw_track(tracker_manager_);
@@ -400,7 +400,7 @@ namespace track_project
                 LOG_ERROR << "ManagementService: 添加点迹到航迹 " << header.track_id << " 失败:unknown" << std::endl;
             }
 
-            //TODO，向其他线程发送航迹情况
+            // TODO，向其他线程发送航迹情况
         }
     }
 
@@ -447,10 +447,9 @@ namespace track_project
     void ManagementService::process_draw(std::vector<TrackPoint> &point_data)
     {
         LOG_DEBUG << "ManagementService: 处理点迹绘制指令，数量: " << point_data.size() << std::endl;
-        
+
         // 调用TrackerVisualizer的draw_point_cloud函数
         track_visualizer_.draw_point_cloud(point_data);
-        
     }
 
 } // namespace track_project
