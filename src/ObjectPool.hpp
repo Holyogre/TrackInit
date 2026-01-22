@@ -179,6 +179,21 @@ namespace track_project::trackinit
             return result;
         }
 
+        // 仅用于DEBUG的函数
+        size_t get_allocated_count() const
+        {
+            size_t count = 0;
+            // 遍历对象池或索引，统计有效指针
+            for (const auto &flag : alloc_flags_)
+            {
+                if (flag == 1)
+                {
+                    ++count;
+                }
+            }
+            return count;
+        }
+
     private:
         // 内部扩容方法
         void expand_pool(size_t new_size)

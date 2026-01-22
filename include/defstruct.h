@@ -131,6 +131,23 @@ namespace track_project
 
         // 时间戳
         Timestamp time;
+
+        friend std::ostream &operator<<(std::ostream &os, const TrackPoint &pt)
+        {
+            os << "TrackPoint(longitude=" << pt.longitude
+               << ", latitude=" << pt.latitude
+               << ", doppler=" << pt.doppler
+               << ", sog=" << pt.sog
+               << ", cog=" << pt.cog
+               << ", x=" << pt.x
+               << ", y=" << pt.y
+               << ", vx=" << pt.vx
+               << ", vy=" << pt.vy
+               << ", is_associated=" << pt.is_associated
+               << ", time=" << pt.time
+               << ")";
+            return os;
+        }
     };
 
 } // track_project

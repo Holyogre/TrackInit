@@ -51,21 +51,16 @@ endfunction()
 # add_track_test(test_ClustDBSCAN
 #                 test_ClustDBSCAN.cpp
 #                 ../src/Func_dbscan.cpp)
-# add_track_test(test_HoughSlice
-#                 test_HoughSlice.cpp
-#                 ../src/HoughSlice.cpp
-#                 ../src/Func_dbscan.cpp)
-add_track_test(test_callback
-                test_trackinit_callback.cpp
-                ${MYUTILS_SOURCES}
-                ${TRACKMANAGER_SOURCES}
+add_track_test(test_HoughSlice
+                test_HoughSlice.cpp
                 ../src/HoughSlice.cpp
                 ../src/Func_dbscan.cpp
-                )
+                ${MYUTILS_SOURCES}
+                ${TRACKMANAGER_SOURCES})
+
 
 
 # 注册数据层滚动
 # add_test(NAME testObjectPool功能测试 COMMAND testObjectPool "[memory_pool][]")
 # add_test(NAME ClustDBSCAN COMMAND test_ClustDBSCAN "[dbscan][]")
-# add_test(NAME HoughSlice功能测试 COMMAND test_HoughSlice "[clust_gen][]")
-add_test(NAME trackinit回调函数测试 COMMAND test_callback "[basic]")
+add_test(NAME HoughSlice功能测试 COMMAND test_HoughSlice "[FunctionalityCheck]")

@@ -49,7 +49,8 @@ namespace track_project::trackinit
      *
      * @note 原始实现：Eleobert do Espírito Santo (2021)
      *       修改：xjl (2025-12-18)
-     * @version 1.0 (修改版)
+     *       修改: xjl (2025-01-22)  支持单点聚类
+     * @version 2.0 (修改版)
      * @author xjl (xjl20011009@126.com)
      * @date 2025-12-18
      *****************************************************************************/

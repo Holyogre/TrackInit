@@ -1,6 +1,6 @@
-#include <cassert>  //静态断言检查避免忘了用回调函数
-#include <algorithm> 
-#include <cmath> 
+#include <cassert> //静态断言检查避免忘了用回调函数
+#include <algorithm>
+#include <cmath>
 
 #include "HoughSlice.hpp"
 #include "Func_dbscan.hpp"
@@ -16,13 +16,26 @@ namespace track_project::trackinit
 
         // STEP1：对于新来的点迹生成聚类
         process_cluster_generation(points);
+        // STEP1 DEBUG宏，用于查看当前聚类信息
+        LOG_DEBUG << "=== 聚类信息可视化 ===";
+        LOG_DEBUG << "当前聚类数量：" << ClustArea.get_allocated_count(); // ⚠仅建议DEBUG下使用这个函数，因为真的很浪费时间
+        for (auto &clust : ClustArea.get_allocated_ptrs())
+        {
+            LOG_DEBUG << "当前聚类中心：(" << clust->center_x << "," << clust->center_y << ")，共" << clust->current_batch_index << "批次："
+                      << "第一批次点迹数量：" << clust->point_list[0].size()
+                      << ", 第二批次点迹数量：" << clust->point_list[1].size()
+                      << ", 第三批次点迹数量：" << clust->point_list[2].size()
+                      << ", 第四批次点迹数量：" << clust->point_list[3].size();
+        }
 
         // STEP2：对于当前聚类中的所有点迹进行霍夫变换投票
+        LOG_DEBUG << "=== 霍夫投票过程可视化 ===";
         std::vector<Slice *> clustAera_list = ClustArea.get_allocated_ptrs();
         for (auto &it_clust : clustAera_list)
         {
             if (it_clust->current_batch_index != 3)
             {
+                LOG_DEBUG << "聚类(" << it_clust->center_x << "," << it_clust->center_y << "): 批次数不足，跳过投票";
                 continue; // 批次数不足，跳过
             }
 
@@ -33,6 +46,68 @@ namespace track_project::trackinit
                     process_point_for_hough_vote(batch, point, *it_clust);
                 }
             }
+
+            //STEP2 DEBUG宏，用于查看霍夫变换空间投票结果
+#ifndef NDEBUG
+            {
+                // 生成文件名
+                std::stringstream filename;
+                filename << "/home/holyogre/TrackInit/hough_debug_"
+                         << std::fixed << std::setprecision(1) << it_clust->center_x << "_"
+                         << std::setprecision(1) << it_clust->center_y << ".dat";
+
+                // 打开文件
+                std::ofstream file(filename.str(), std::ios::binary);
+                if (file.is_open())
+                {
+                    // 写入维度
+                    uint32_t dims[2] = {static_cast<uint32_t>(HOUGH_THETA_DIM),
+                                        static_cast<uint32_t>(HOUGH_RHO_DIM)};
+                    file.write(reinterpret_cast<const char *>(dims), 2 * sizeof(uint32_t));
+
+                    // 统计信息
+                    uint64_t total_votes = 0;
+                    uint32_t non_zero_count = 0;
+
+                    // 写入数据并统计
+                    for (size_t theta = 0; theta < HOUGH_THETA_DIM; ++theta)
+                    {
+                        for (size_t rho = 0; rho < HOUGH_RHO_DIM; ++rho)
+                        {
+                            uint64_t votes = it_clust->vote_area[theta][rho];
+                            file.write(reinterpret_cast<const char *>(&votes), sizeof(uint64_t));
+                            total_votes += votes;
+                            if (votes > 0)
+                                non_zero_count++;
+                        }
+                    }
+
+                    file.close();
+
+                    // 如果非零值较少，打印位置
+                    if (non_zero_count <= 20)
+                    {
+                        for (size_t theta = 0; theta < HOUGH_THETA_DIM; ++theta)
+                        {
+                            for (size_t rho = 0; rho < HOUGH_RHO_DIM; ++rho)
+                            {
+                                uint64_t votes = it_clust->vote_area[theta][rho];
+                                if (votes > 0)
+                                {
+                                    LOG_DEBUG << "theta=" << theta << " rho=" << rho
+                                              << " votes=" << votes;
+                                }
+                            }
+                        }
+                    }
+
+                    // 简单统计
+                    LOG_DEBUG << "霍夫空间已保存: " << filename.str()
+                              << " (非零单元格: " << non_zero_count
+                              << ", 总投票: " << total_votes << ")\n";
+                }
+            }
+#endif
         }
 
         // 峰值检测和航迹生成
@@ -40,11 +115,12 @@ namespace track_project::trackinit
         {
             if (it_clust->current_batch_index != 3)
             {
-                continue; // 批次数不足，跳过
+                LOG_DEBUG << "聚类(" << it_clust->center_x << "," << it_clust->center_y << "): 批次数不足，跳过峰值检测";
             }
 
             // STEP3:峰值检测
             std::vector<std::array<double, 3>> detected_lines = process_extract_peak_from_hough_space(*it_clust);
+            LOG_DEBUG << "聚类中心(" << it_clust->center_x << "," << it_clust->center_y << ")检测到直线数量：" << detected_lines.size();
 
             // STEP4:回溯点迹，生成航迹
             process_backtrack_points(detected_lines, *it_clust, new_track);
@@ -76,6 +152,8 @@ namespace track_project::trackinit
         std::vector<Slice *> clustAera_list = ClustArea.get_allocated_ptrs();
         for (const auto &it_clust : clustAera_list)
         {
+            it_clust->current_batch_index++; // 批次索引加1
+
             //  检测点迹是否在中心点附近
             for (auto it_point = points.begin(); it_point != points.end(); ++it_point)
             {
@@ -85,7 +163,11 @@ namespace track_project::trackinit
                 if (dist_square <= SLICEHOUGH_CLUSTER_RADIUS_KM * SLICEHOUGH_CLUSTER_RADIUS_KM)
                 {
                     // 点迹在聚类范围内，加入该聚类
-                    size_t batch = it_clust->current_batch_index + 1; // 下一批次数据存放位置
+                    size_t batch = it_clust->current_batch_index; // 当前批次数据存放位置
+                    if (batch >= it_clust->point_list.size())
+                    {
+                        continue; // 超出批次数量，忽略
+                    }
                     it_clust->point_list[batch].push_back(*it_point);
 
                     // 标记该点迹已被聚类

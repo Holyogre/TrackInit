@@ -1,11 +1,57 @@
 #include "../src/HoughSlice.hpp"
+#include "../include/defsystem.h"
 #include <vector>
 #include <random>
 #include <cmath>
 
 using track_project::TrackPoint;
 
-/// ————————————————————————————————————————————————————————测试函数区———————————————————————————————————————— ///
+constexpr double KM_PER_DEGREE = 111.0;
+
+// ——————————————————————————————————坐标转换函数————————————————————————————————//
+void xy2ll(double x, double y, double &lon, double &lat)
+{
+    // 反向转换：假设1度经纬对应固定km比例
+    lon = x / KM_PER_DEGREE + track_project::base_longitude;
+
+    double cos_base = std::cos(track_project::base_latitude * M_PI / 180.0);
+    if (std::abs(cos_base) < 1e-9)
+    {
+        lat = track_project::base_latitude;
+    }
+    else
+    {
+        lat = y / (KM_PER_DEGREE * cos_base) + track_project::base_latitude;
+    }
+}
+
+void ll2xy(double lon, double lat, double &x, double &y)
+{
+    // 简单的线性转换，假设1度经度约等于111km，1度纬度约等于111km
+    x = (lon - track_project::base_longitude) * KM_PER_DEGREE;
+    y = (lat - track_project::base_latitude) * KM_PER_DEGREE * std::cos(track_project::base_latitude * M_PI / 180.0);
+}
+
+void sync_lon_lat(TrackPoint &p)
+{
+    xy2ll(p.x, p.y, p.longitude, p.latitude);
+}
+
+// ——————————————————————————————————外推函数————————————————————————————————//
+void point_update(TrackPoint &p, double time_interval_s)
+{
+    // 更新位置
+    p.x += p.vx * time_interval_s / 1000.0; // vx单位m/s，转换为km
+    p.y += p.vy * time_interval_s / 1000.0;
+
+    // 更新经纬度
+    sync_lon_lat(p);
+
+    // 更新时间戳
+    p.time.milliseconds += static_cast<int64_t>(time_interval_s * 1000);
+}
+
+// ——————————————————————————————————点迹生成函数————————————————————————————————//
 /*****************************************************************************
  * @brief 用于生成符合点迹生成参数的均匀分布的点迹群
  *
@@ -57,6 +103,9 @@ std::vector<TrackPoint> generate_uniform_points(size_t n_points, int64_t time,
 
         // 时间戳
         p.time.milliseconds = time;
+
+        // 经纬度
+        sync_lon_lat(p);
 
         pts.push_back(p);
     }
@@ -111,6 +160,9 @@ std::vector<TrackPoint> generate_gaussian_points(size_t n_points, int64_t time,
         p.doppler = p.sog * std::cos(point_angle - cog_rad);
 
         p.time.milliseconds = time;
+
+        // 经纬度
+        sync_lon_lat(p);
         pts.push_back(p);
     }
     return pts;
@@ -168,18 +220,10 @@ std::vector<TrackPoint> generate_rayleigh_points(size_t n_points, int64_t time,
         p.doppler = p.sog * std::cos(point_angle - cog_rad);
 
         p.time.milliseconds = time;
+
+        // 经纬度
+        sync_lon_lat(p);
         pts.push_back(p);
     }
     return pts;
-}
-
-// 依据点迹参数直线外推点迹的方法
-void point_update(TrackPoint &p, double time_interval_s)
-{
-    // 更新位置
-    p.x += p.vx * time_interval_s / 1000.0; // vx单位m/s，转换为km
-    p.y += p.vy * time_interval_s / 1000.0;
-
-    // 更新时间戳
-    p.time.milliseconds += static_cast<int64_t>(time_interval_s * 1000);
 }

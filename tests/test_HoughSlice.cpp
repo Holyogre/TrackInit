@@ -1,5 +1,6 @@
 #include <catch2/catch_all.hpp>
 #include "../src/HoughSlice.hpp"
+#include "../include/ManagementService.hpp"
 #include <string>
 #include <vector>
 #include <iostream>
@@ -7,6 +8,8 @@
 #include <memory>
 #include <algorithm>
 #include <cstring>
+#include <set>
+#include <thread>
 
 #include "Func_pointgen.hpp" //测试点迹生成以及更新函数
 #include "Func_cout.hpp"     //一些<<重载，方便输出
@@ -22,16 +25,82 @@ using track_project::trackinit::SLICEHOUGH_CLUSTER_RADIUS_KM;
 // 友元访问器，实现对私有聚类函数的调用
 namespace track_project::trackinit
 {
-    struct SliceHoughBenchAccessor
+    struct test_HoughSlice
     {
-        // static void run_gen_1(SliceHough &alg, const std::vector<TrackPoint> &pts) { alg.clust_gen(pts); } //原为clust_gen_1，经过测试，保留
-        // static void run_gen_2(SliceHough &alg, const std::vector<TrackPoint> &pts) { alg.clust_gen(pts); } //原为clust_gen_2，经过测试，删除gen_2
+        static void run_cluster_process(SliceHough &alg, const std::vector<TrackPoint> &pts)
+        {
+            alg.process_cluster_generation(pts);
+        }
     };
 }
 
-using track_project::trackinit::SliceHoughBenchAccessor;
+using track_project::trackinit::test_HoughSlice;
 
-TEST_CASE("性能比较", "[clust_gen][bench_mark]")
+TEST_CASE("功能测试", "[FunctionalityCheck]")
+{
+    // 随机数种子
+    unsigned int seed = Catch::getSeed();
+
+    // 生成高斯分布的10个点迹
+    auto points = generate_gaussian_points(1, 0,
+                                           SLICEHOUGH_CLUSTER_RADIUS_KM * 2 / 3, SLICEHOUGH_CLUSTER_RADIUS_KM / 4,
+                                           SLICEHOUGH_CLUSTER_RADIUS_KM * 2 / 3, SLICEHOUGH_CLUSTER_RADIUS_KM / 4,
+                                           10.0, 5.0,
+                                           seed);
+    std::vector<std::array<TrackPoint, 4>> new_tracks;
+
+    // 创建SliceHough对象
+    SliceHough alg;
+
+    // 创建航迹管理器
+    track_project::ManagementService track_manager;
+
+    // 绑定回调函数，显示航迹
+    alg.set_track_callback([&track_manager](const std::vector<std::array<TrackPoint, 4>> &tracks)
+                           { track_manager.create_track_command(const_cast<std::vector<std::array<TrackPoint, 4>> &>(tracks)); });
+
+    // 首次处理点迹
+    track_manager.clear_all_command(); // 清空状态
+
+    for (auto &p : points)
+    {
+        LOG_INFO << "初始点迹位置：" << p;
+    }
+    track_manager.draw_point_command(points); // 绘制点迹
+    alg.process(points, new_tracks);
+
+    // 更新点迹位置
+    for (auto &p : points)
+    {
+        point_update(p, TIME_INTERVAL_S);
+        LOG_INFO << "第一次更新后点迹位置：" << p;
+    }
+    track_manager.draw_point_command(points); // 绘制点迹
+    alg.process(points, new_tracks);
+
+    // 第三次更新和第二次本质上是一样的，所以其实没必要继续更新了
+    for (auto &p : points)
+    {
+        point_update(p, TIME_INTERVAL_S);
+        LOG_INFO << "第二次更新后点迹位置：" << p;
+    }
+    track_manager.draw_point_command(points); // 绘制点迹
+    alg.process(points, new_tracks);
+
+    // 第四次更新的时候可能会发送数据，作benchmark
+    for (auto &p : points)
+    {
+        point_update(p, TIME_INTERVAL_S);
+        LOG_INFO << "第三次更新后点迹位置：" << p;
+    }
+    track_manager.draw_point_command(points); // 绘制点迹
+
+    alg.process(points, new_tracks);
+
+    std::this_thread::sleep_for(std::chrono::seconds(3));
+}
+
+TEST_CASE("聚类压测（废弃，另一个函数已经被删除了，log有）", "[clust_gen]")
 {
     // 随机数种子
     unsigned int seed = Catch::getSeed();
@@ -117,7 +186,7 @@ TEST_CASE("性能比较", "[clust_gen][bench_mark]")
     SECTION("完全随机情况下的点迹更新测试")
     {
         SliceHough alg;
-        SliceHoughBenchAccessor::run_gen_1(alg, noise_point); // 预先放入一批数据
+        test_HoughSlice::run_cluster_process(alg, noise_point); // 预先放入一批数据
 
         // 更新所有点迹
         for (auto &p : noise_point)
@@ -125,21 +194,16 @@ TEST_CASE("性能比较", "[clust_gen][bench_mark]")
             point_update(p, TIME_INTERVAL_S);
         }
 
-        BENCHMARK("gen1函数")
+        BENCHMARK("cluster_process")
         {
-            SliceHoughBenchAccessor::run_gen_1(alg, noise_point);
-        };
-
-        BENCHMARK("gen2函数")
-        {
-            SliceHoughBenchAccessor::run_gen_2(alg, noise_point);
+            test_HoughSlice::run_cluster_process(alg, noise_point);
         };
     }
 
     SECTION("五个均匀分布聚类测试")
     {
         SliceHough alg;
-        SliceHoughBenchAccessor::run_gen_1(alg, uniform_point); // 预先放入一批数据
+        test_HoughSlice::run_cluster_process(alg, uniform_point); // 预先放入一批数据
 
         // 更新所有点迹
         for (auto &p : uniform_point)
@@ -151,21 +215,16 @@ TEST_CASE("性能比较", "[clust_gen][bench_mark]")
         uniform_point.insert(uniform_point.end(), noise_point.begin(), noise_point.end());
         uniform_point.insert(uniform_point.end(), single_clust_point.begin(), single_clust_point.end());
 
-        BENCHMARK("gen1函数")
+        BENCHMARK("cluster_process")
         {
-            SliceHoughBenchAccessor::run_gen_1(alg, uniform_point);
-        };
-
-        BENCHMARK("gen2函数")
-        {
-            SliceHoughBenchAccessor::run_gen_2(alg, uniform_point);
+            test_HoughSlice::run_cluster_process(alg, uniform_point);
         };
     }
 
     SECTION("五个高斯分布聚类测试")
     {
         SliceHough alg;
-        SliceHoughBenchAccessor::run_gen_1(alg, gauss_point); // 预先放入一批数据
+        test_HoughSlice::run_cluster_process(alg, gauss_point); // 预先放入一批数据
 
         // 更新所有点迹
         for (auto &p : gauss_point)
@@ -177,21 +236,16 @@ TEST_CASE("性能比较", "[clust_gen][bench_mark]")
         gauss_point.insert(gauss_point.end(), noise_point.begin(), noise_point.end());
         gauss_point.insert(gauss_point.end(), single_clust_point.begin(), single_clust_point.end());
 
-        BENCHMARK("gen1函数")
+        BENCHMARK("cluster_process")
         {
-            SliceHoughBenchAccessor::run_gen_1(alg, gauss_point);
-        };
-
-        BENCHMARK("gen2函数")
-        {
-            SliceHoughBenchAccessor::run_gen_2(alg, gauss_point);
+            test_HoughSlice::run_cluster_process(alg, gauss_point);
         };
     }
 
     SECTION("五个瑞利分布聚类测试")
     {
         SliceHough alg;
-        SliceHoughBenchAccessor::run_gen_1(alg, rayleigh_point); // 预先放入一批数据
+        test_HoughSlice::run_cluster_process(alg, rayleigh_point); // 预先放入一批数据
 
         // 更新所有点迹
         for (auto &p : rayleigh_point)
@@ -203,14 +257,9 @@ TEST_CASE("性能比较", "[clust_gen][bench_mark]")
         rayleigh_point.insert(rayleigh_point.end(), noise_point.begin(), noise_point.end());
         rayleigh_point.insert(rayleigh_point.end(), single_clust_point.begin(), single_clust_point.end());
 
-        BENCHMARK("gen1函数")
+        BENCHMARK("cluster_process")
         {
-            SliceHoughBenchAccessor::run_gen_1(alg, rayleigh_point);
-        };
-
-        BENCHMARK("gen2函数")
-        {
-            SliceHoughBenchAccessor::run_gen_2(alg, rayleigh_point);
+            test_HoughSlice::run_cluster_process(alg, rayleigh_point);
         };
     }
 }

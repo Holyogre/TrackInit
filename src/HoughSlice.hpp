@@ -32,7 +32,7 @@ namespace track_project::trackinit
     class SliceHough : public TrackInitBase
     {
         // 基准测试访问器友元，用于测试
-        friend struct SliceHoughBenchAccessor;
+        friend struct test_HoughSlice;
 
     private:
         // 航向角离散化参数，由于doppler位的引入，射线方向无意义，仅需"直线与y轴夹角":\alpha、"多普勒速度":doppler即可确定航向
