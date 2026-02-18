@@ -61,8 +61,8 @@ namespace track_project::trackinit
                 if (file.is_open())
                 {
                     // 写入维度
-                    uint32_t dims[2] = {static_cast<uint32_t>(HOUGH_THETA_DIM),
-                                        static_cast<uint32_t>(HOUGH_RHO_DIM)};
+                    uint32_t dims[2] = {static_cast<uint32_t>(HOUGH_RHO_DIM),
+                                        static_cast<uint32_t>(HOUGH_THETA_DIM)};
                     file.write(reinterpret_cast<const char *>(dims), 2 * sizeof(uint32_t));
 
                     // 统计信息
@@ -83,28 +83,6 @@ namespace track_project::trackinit
                     }
 
                     file.close();
-
-                    // 如果非零值较少，打印位置
-                    if (non_zero_count <= 20)
-                    {
-                        for (size_t theta = 0; theta < HOUGH_THETA_DIM; ++theta)
-                        {
-                            for (size_t rho = 0; rho < HOUGH_RHO_DIM; ++rho)
-                            {
-                                uint64_t votes = it_clust->vote_area[theta][rho];
-                                if (votes > 0)
-                                {
-                                    LOG_DEBUG << "theta=" << theta << " rho=" << rho
-                                              << " votes=" << votes;
-                                }
-                            }
-                        }
-                    }
-
-                    // 简单统计
-                    LOG_DEBUG << "霍夫空间已保存: " << filename.str()
-                              << " (非零单元格: " << non_zero_count
-                              << ", 总投票: " << total_votes << ")\n";
                 }
             }
 #endif
@@ -116,6 +94,7 @@ namespace track_project::trackinit
             if (it_clust->current_batch_index != 3)
             {
                 LOG_DEBUG << "聚类(" << it_clust->center_x << "," << it_clust->center_y << "): 批次数不足，跳过峰值检测";
+                continue; // 批次数不足，跳过
             }
 
             // STEP3:峰值检测
@@ -228,8 +207,8 @@ namespace track_project::trackinit
     void SliceHough::process_point_for_hough_vote(size_t batch, const TrackPoint &point, Slice &it_clust)
     {
         // 雷达站位于0,0位置
-        double rel_x = point.x;
-        double rel_y = point.y;
+        double rel_x = point.x - it_clust.center_x;
+        double rel_y = point.y - it_clust.center_y;
 
         // 依据doppler和velocity_max计算所有可能的航向角度序列
         double speed = std::abs(point.doppler); // 取绝对值，单位m/s
@@ -238,10 +217,10 @@ namespace track_project::trackinit
             return; // 速度超过最大值，跳过该点迹
         }
 
-        // 依据法线和DOPPLER方向联合给出基准航向
-        double line_of_sight_rad = std::atan2(rel_y, rel_x);
+        // 计算基准航向，依据doppler的正负确定是朝向还是背向，为极坐标表示方法，便于调用math库函数计算
+        double line_of_sight_rad = std::atan2(point.y, point.x); // 观测航向
         double base_dir_rad = 0.0;
-        if (point.doppler > 0) // 船只基准航向是泛，此时需要对beta加π；操作后值域为(0,2*pi)，无需归一化
+        if (point.doppler > 0) // 表示靠近还是原理，以此决定是否加PI
         {
             base_dir_rad = line_of_sight_rad + M_PI;
             if (base_dir_rad >= 2 * M_PI)
@@ -284,12 +263,12 @@ namespace track_project::trackinit
             heading4 = M_PI;
             heading1 = 0.0;
             heading2 = heading2 - 2 * M_PI;
-            vote_in_hough_space(heading1, heading2, rel_x, rel_y, batch, point.doppler, it_clust.vote_area);
-            vote_in_hough_space(heading3, heading4, rel_x, rel_y, batch, point.doppler, it_clust.vote_area);
+            vote_in_hough_space(heading1, heading2, point.doppler, rel_x, rel_y, batch, it_clust.vote_area);
+            vote_in_hough_space(heading3, heading4, point.doppler, rel_x, rel_y, batch, it_clust.vote_area);
         }
         else
         {
-            vote_in_hough_space(heading1, heading2, rel_x, rel_y, batch, point.doppler, it_clust.vote_area);
+            vote_in_hough_space(heading1, heading2, point.doppler, rel_x, rel_y, batch, it_clust.vote_area);
         }
     }
 
@@ -339,7 +318,19 @@ namespace track_project::trackinit
             }
 
             // 在对应位置投票，使用位或存储不同速度的信息，避免重复计数
-            vote_area[angle_idx][distance_idx] |= (doppler_bitmask << (batch * 16));
+            if (angle_idx >= HOUGH_THETA_DIM) // 角度索引越界,说明是heading超过180度，进行反向
+            {
+                vote_area[angle_idx - HOUGH_THETA_DIM][distance_idx] |= (static_cast<std::uint64_t>(doppler_bitmask) << (batch * 16));
+            }
+            else
+            { // 正常情况
+                vote_area[angle_idx][distance_idx] |= (static_cast<std::uint64_t>(doppler_bitmask) << (batch * 16));
+            }
+
+            // if (batch == 0 && doppler_bitmask != 0) // 仅在第一批次且有速度信息时输出调试日志，避免过多日志
+            // {
+            //     LOG_DEBUG << "投票了一个点: 角度索引=" << angle_idx << ", 距离索引=" << distance_idx;
+            // }
         }
     }
 

@@ -101,166 +101,166 @@ TEST_CASE("功能测试", "[FunctionalityCheck]")
     std::this_thread::sleep_for(std::chrono::seconds(3));
 }
 
-TEST_CASE("聚类压测（废弃，另一个函数已经被删除了，log有）", "[clust_gen]")
-{
-    // 随机数种子
-    unsigned int seed = Catch::getSeed();
-    std::mt19937 gen(seed);
+// TEST_CASE("聚类压测（废弃，另一个函数已经被删除了，log有）", "[clust_gen]")
+// {
+//     // 随机数种子
+//     unsigned int seed = Catch::getSeed();
+//     std::mt19937 gen(seed);
 
-    // 参数定义
-    const size_t N_POINTS = 1000;
-    const size_t N_CLUSTERS_5 = 5;
-    const size_t POINTS_PER_CLUSTER = N_POINTS / N_CLUSTERS_5;
-    const double x_min = -400.0, x_max = 400.0;
-    const double y_min = -400.0, y_max = 400.0;
-    const double v_mean = 10.0, v_stddev = 5.0;
-    const int x_cell = 1 + static_cast<int>((x_max - x_min) / SLICEHOUGH_CLUSTER_RADIUS_KM);
-    const int y_cell = 1 + static_cast<int>((y_max - y_min) / SLICEHOUGH_CLUSTER_RADIUS_KM);
+//     // 参数定义
+//     const size_t N_POINTS = 1000;
+//     const size_t N_CLUSTERS_5 = 5;
+//     const size_t POINTS_PER_CLUSTER = N_POINTS / N_CLUSTERS_5;
+//     const double x_min = -400.0, x_max = 400.0;
+//     const double y_min = -400.0, y_max = 400.0;
+//     const double v_mean = 10.0, v_stddev = 5.0;
+//     const int x_cell = 1 + static_cast<int>((x_max - x_min) / SLICEHOUGH_CLUSTER_RADIUS_KM);
+//     const int y_cell = 1 + static_cast<int>((y_max - y_min) / SLICEHOUGH_CLUSTER_RADIUS_KM);
 
-    // 生成数据
-    std::vector<TrackPoint> uniform_point, gauss_point, rayleigh_point;
-    std::vector<std::pair<double, double>> centers;
-    std::set<std::pair<int, int>> used_cells;
+//     // 生成数据
+//     std::vector<TrackPoint> uniform_point, gauss_point, rayleigh_point;
+//     std::vector<std::pair<double, double>> centers;
+//     std::set<std::pair<int, int>> used_cells;
 
-    // 生成噪声点迹
-    auto noise_point = generate_uniform_points(N_POINTS, 0, x_min, x_max, y_min, y_max, v_mean, v_stddev, seed);
+//     // 生成噪声点迹
+//     auto noise_point = generate_uniform_points(N_POINTS, 0, x_min, x_max, y_min, y_max, v_mean, v_stddev, seed);
 
-    // 生成聚类中心 - 使用普通随机数生成器
-    std::uniform_int_distribution<> dist_x(0, x_cell - 1); // 注意边界
-    std::uniform_int_distribution<> dist_y(0, y_cell - 1);
+//     // 生成聚类中心 - 使用普通随机数生成器
+//     std::uniform_int_distribution<> dist_x(0, x_cell - 1); // 注意边界
+//     std::uniform_int_distribution<> dist_y(0, y_cell - 1);
 
-    // 抽调一个聚类中心用于构造新航迹
-    used_cells.insert({0, 0});
-    auto single_clust_point = generate_gaussian_points(
-        POINTS_PER_CLUSTER, TIME_INTERVAL_S,
-        0, SLICEHOUGH_CLUSTER_RADIUS_KM / 2,
-        0, SLICEHOUGH_CLUSTER_RADIUS_KM / 2,
-        v_mean, v_stddev, seed);
+//     // 抽调一个聚类中心用于构造新航迹
+//     used_cells.insert({0, 0});
+//     auto single_clust_point = generate_gaussian_points(
+//         POINTS_PER_CLUSTER, TIME_INTERVAL_S,
+//         0, SLICEHOUGH_CLUSTER_RADIUS_KM / 2,
+//         0, SLICEHOUGH_CLUSTER_RADIUS_KM / 2,
+//         v_mean, v_stddev, seed);
 
-    while (centers.size() < N_CLUSTERS_5)
-    {
-        int cell_x = dist_x(gen);
-        int cell_y = dist_y(gen);
+//     while (centers.size() < N_CLUSTERS_5)
+//     {
+//         int cell_x = dist_x(gen);
+//         int cell_y = dist_y(gen);
 
-        if (used_cells.find({cell_x, cell_y}) == used_cells.end())
-        {
-            used_cells.insert({cell_x, cell_y});
-            double center_x = x_min + (cell_x + 0.5) * SLICEHOUGH_CLUSTER_RADIUS_KM;
-            double center_y = y_min + (cell_y + 0.5) * SLICEHOUGH_CLUSTER_RADIUS_KM;
-            centers.emplace_back(center_x, center_y);
-        }
-    }
+//         if (used_cells.find({cell_x, cell_y}) == used_cells.end())
+//         {
+//             used_cells.insert({cell_x, cell_y});
+//             double center_x = x_min + (cell_x + 0.5) * SLICEHOUGH_CLUSTER_RADIUS_KM;
+//             double center_y = y_min + (cell_y + 0.5) * SLICEHOUGH_CLUSTER_RADIUS_KM;
+//             centers.emplace_back(center_x, center_y);
+//         }
+//     }
 
-    LOG_INFO << "生成聚类中心点完成，聚类中心位置" << centers;
+//     LOG_INFO << "生成聚类中心点完成，聚类中心位置" << centers;
 
-    // 为每个聚类中心生成三种分布的点
-    for (const auto &center : centers)
-    {
-        // 均匀分布点
-        auto temp_uniform = generate_uniform_points(
-            POINTS_PER_CLUSTER, 0,
-            center.first - SLICEHOUGH_CLUSTER_RADIUS_KM / 2,
-            center.first + SLICEHOUGH_CLUSTER_RADIUS_KM / 2,
-            center.second - SLICEHOUGH_CLUSTER_RADIUS_KM / 2,
-            center.second + SLICEHOUGH_CLUSTER_RADIUS_KM / 2,
-            v_mean, v_stddev, seed);
-        uniform_point.insert(uniform_point.end(), temp_uniform.begin(), temp_uniform.end());
+//     // 为每个聚类中心生成三种分布的点
+//     for (const auto &center : centers)
+//     {
+//         // 均匀分布点
+//         auto temp_uniform = generate_uniform_points(
+//             POINTS_PER_CLUSTER, 0,
+//             center.first - SLICEHOUGH_CLUSTER_RADIUS_KM / 2,
+//             center.first + SLICEHOUGH_CLUSTER_RADIUS_KM / 2,
+//             center.second - SLICEHOUGH_CLUSTER_RADIUS_KM / 2,
+//             center.second + SLICEHOUGH_CLUSTER_RADIUS_KM / 2,
+//             v_mean, v_stddev, seed);
+//         uniform_point.insert(uniform_point.end(), temp_uniform.begin(), temp_uniform.end());
 
-        // 高斯分布点
-        auto temp_gauss = generate_gaussian_points(
-            POINTS_PER_CLUSTER, 0,
-            center.first, SLICEHOUGH_CLUSTER_RADIUS_KM / 4,
-            center.second, SLICEHOUGH_CLUSTER_RADIUS_KM / 4,
-            v_mean, v_stddev, seed);
-        gauss_point.insert(gauss_point.end(), temp_gauss.begin(), temp_gauss.end());
+//         // 高斯分布点
+//         auto temp_gauss = generate_gaussian_points(
+//             POINTS_PER_CLUSTER, 0,
+//             center.first, SLICEHOUGH_CLUSTER_RADIUS_KM / 4,
+//             center.second, SLICEHOUGH_CLUSTER_RADIUS_KM / 4,
+//             v_mean, v_stddev, seed);
+//         gauss_point.insert(gauss_point.end(), temp_gauss.begin(), temp_gauss.end());
 
-        // 瑞利分布点
-        auto temp_rayleigh = generate_rayleigh_points(
-            POINTS_PER_CLUSTER, 0,
-            center.first, center.second,
-            SLICEHOUGH_CLUSTER_RADIUS_KM / 4, 1.0,
-            v_mean, v_stddev, seed);
-        rayleigh_point.insert(rayleigh_point.end(), temp_rayleigh.begin(), temp_rayleigh.end());
-    }
+//         // 瑞利分布点
+//         auto temp_rayleigh = generate_rayleigh_points(
+//             POINTS_PER_CLUSTER, 0,
+//             center.first, center.second,
+//             SLICEHOUGH_CLUSTER_RADIUS_KM / 4, 1.0,
+//             v_mean, v_stddev, seed);
+//         rayleigh_point.insert(rayleigh_point.end(), temp_rayleigh.begin(), temp_rayleigh.end());
+//     }
 
-    // 存入Accessor构造第一批聚类
-    SECTION("完全随机情况下的点迹更新测试")
-    {
-        SliceHough alg;
-        test_HoughSlice::run_cluster_process(alg, noise_point); // 预先放入一批数据
+//     // 存入Accessor构造第一批聚类
+//     SECTION("完全随机情况下的点迹更新测试")
+//     {
+//         SliceHough alg;
+//         test_HoughSlice::run_cluster_process(alg, noise_point); // 预先放入一批数据
 
-        // 更新所有点迹
-        for (auto &p : noise_point)
-        {
-            point_update(p, TIME_INTERVAL_S);
-        }
+//         // 更新所有点迹
+//         for (auto &p : noise_point)
+//         {
+//             point_update(p, TIME_INTERVAL_S);
+//         }
 
-        BENCHMARK("cluster_process")
-        {
-            test_HoughSlice::run_cluster_process(alg, noise_point);
-        };
-    }
+//         BENCHMARK("cluster_process")
+//         {
+//             test_HoughSlice::run_cluster_process(alg, noise_point);
+//         };
+//     }
 
-    SECTION("五个均匀分布聚类测试")
-    {
-        SliceHough alg;
-        test_HoughSlice::run_cluster_process(alg, uniform_point); // 预先放入一批数据
+//     SECTION("五个均匀分布聚类测试")
+//     {
+//         SliceHough alg;
+//         test_HoughSlice::run_cluster_process(alg, uniform_point); // 预先放入一批数据
 
-        // 更新所有点迹
-        for (auto &p : uniform_point)
-        {
-            point_update(p, TIME_INTERVAL_S);
-        }
+//         // 更新所有点迹
+//         for (auto &p : uniform_point)
+//         {
+//             point_update(p, TIME_INTERVAL_S);
+//         }
 
-        // 添加噪声点和聚类点
-        uniform_point.insert(uniform_point.end(), noise_point.begin(), noise_point.end());
-        uniform_point.insert(uniform_point.end(), single_clust_point.begin(), single_clust_point.end());
+//         // 添加噪声点和聚类点
+//         uniform_point.insert(uniform_point.end(), noise_point.begin(), noise_point.end());
+//         uniform_point.insert(uniform_point.end(), single_clust_point.begin(), single_clust_point.end());
 
-        BENCHMARK("cluster_process")
-        {
-            test_HoughSlice::run_cluster_process(alg, uniform_point);
-        };
-    }
+//         BENCHMARK("cluster_process")
+//         {
+//             test_HoughSlice::run_cluster_process(alg, uniform_point);
+//         };
+//     }
 
-    SECTION("五个高斯分布聚类测试")
-    {
-        SliceHough alg;
-        test_HoughSlice::run_cluster_process(alg, gauss_point); // 预先放入一批数据
+//     SECTION("五个高斯分布聚类测试")
+//     {
+//         SliceHough alg;
+//         test_HoughSlice::run_cluster_process(alg, gauss_point); // 预先放入一批数据
 
-        // 更新所有点迹
-        for (auto &p : gauss_point)
-        {
-            point_update(p, TIME_INTERVAL_S);
-        }
+//         // 更新所有点迹
+//         for (auto &p : gauss_point)
+//         {
+//             point_update(p, TIME_INTERVAL_S);
+//         }
 
-        // 添加噪声点和聚类点
-        gauss_point.insert(gauss_point.end(), noise_point.begin(), noise_point.end());
-        gauss_point.insert(gauss_point.end(), single_clust_point.begin(), single_clust_point.end());
+//         // 添加噪声点和聚类点
+//         gauss_point.insert(gauss_point.end(), noise_point.begin(), noise_point.end());
+//         gauss_point.insert(gauss_point.end(), single_clust_point.begin(), single_clust_point.end());
 
-        BENCHMARK("cluster_process")
-        {
-            test_HoughSlice::run_cluster_process(alg, gauss_point);
-        };
-    }
+//         BENCHMARK("cluster_process")
+//         {
+//             test_HoughSlice::run_cluster_process(alg, gauss_point);
+//         };
+//     }
 
-    SECTION("五个瑞利分布聚类测试")
-    {
-        SliceHough alg;
-        test_HoughSlice::run_cluster_process(alg, rayleigh_point); // 预先放入一批数据
+//     SECTION("五个瑞利分布聚类测试")
+//     {
+//         SliceHough alg;
+//         test_HoughSlice::run_cluster_process(alg, rayleigh_point); // 预先放入一批数据
 
-        // 更新所有点迹
-        for (auto &p : rayleigh_point)
-        {
-            point_update(p, TIME_INTERVAL_S);
-        }
+//         // 更新所有点迹
+//         for (auto &p : rayleigh_point)
+//         {
+//             point_update(p, TIME_INTERVAL_S);
+//         }
 
-        // 添加噪声点和聚类点
-        rayleigh_point.insert(rayleigh_point.end(), noise_point.begin(), noise_point.end());
-        rayleigh_point.insert(rayleigh_point.end(), single_clust_point.begin(), single_clust_point.end());
+//         // 添加噪声点和聚类点
+//         rayleigh_point.insert(rayleigh_point.end(), noise_point.begin(), noise_point.end());
+//         rayleigh_point.insert(rayleigh_point.end(), single_clust_point.begin(), single_clust_point.end());
 
-        BENCHMARK("cluster_process")
-        {
-            test_HoughSlice::run_cluster_process(alg, rayleigh_point);
-        };
-    }
-}
+//         BENCHMARK("cluster_process")
+//         {
+//             test_HoughSlice::run_cluster_process(alg, rayleigh_point);
+//         };
+//     }
+// }

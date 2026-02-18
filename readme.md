@@ -142,7 +142,7 @@
      - 投票的位运算 process_vote_points_in_cluster()
      - 峰值提取的位运算 peak_filter()
 
-## 2026-01-22
+## 2026-01-22 至 2026-01-30
 1. **HoughSlice发送航迹功能实现**
    - 在 `process()` 函数中完成航迹发送逻辑，使用回调函数 `track_callback_` 将生成的航迹数据传递给外部系统。
    - 已经观测到回调函数被正确调用，航迹数据（观测到航迹成功绘制）
@@ -150,7 +150,7 @@
 2. **HoughSlice单元测试编写**
    - 还在功能性测试阶段，聚类进行了修改，现在对于不归属于任何聚类的点迹，会生成一个新的聚类
    - 现在process_cluster_generation在单点情况下已经完成了测试
-   - process_vote_points_in_cluster部分已经定位到bug，目前投票情况是一票没投。。用MATLAB写了个小程序验证了霍夫变换的正确性，发现代码里投票逻辑有问题
+   - process_point_for_hough_vote部分已经定位到bug，目前投票情况是一票没投。。用MATLAB写了个小程序验证了霍夫变换的正确性，发现代码里投票逻辑有问题
    - 后面两部分还没验证，明天继续
 3. **Func_dbscan函数逻辑修改**
    - 修改了dbscan函数的逻辑，现在对于不归属于任何聚类的点迹，会生成一个新的聚类
@@ -158,17 +158,18 @@
    - 然后被使用的点应该是不能被第二个聚类使用。。。。不过使用了也许也行，反正是两个聚类切面
 4. **TODO / 明日计划**
     - 功能性测试还有两个process没完成
-    - process_vote_points_in_cluster的一票未投需要修改
+    - process_point_for_hough_vote的一票未投需要修改
     - 位扩展类不写了，最近几天先尽快完成这个航迹起始算法的开发和测试
 
-
-# TODO 
-改到280行：
-            heading3 = heading1 - M_PI;
-            heading4 = M_PI;
-            heading1 = 0.0;
-            heading2 = heading2 - 2 * M_PI;
-            vote_in_hough_space(heading1, heading2, rel_x, rel_y, batch, point.doppler, it_clust.vote_area);
-            vote_in_hough_space(heading3, heading4, rel_x, rel_y, batch, point.doppler, it_clust.vote_area);
-            确认度数正确，准备检查函数：vote_in_hough_space
-            
+## 2026-02-18
+1. **HoughSliceBUG修复**
+   - 修复了 `process_point_for_hough_vote()` 中的投票逻辑错误，主要是由于最大速度设置过小导致的
+   - 修改了`process_point_for_hough_vote`中的逻辑错误，原代码混淆了 point.xy 和 rel_x, rel_y 的使用
+   - MATLAB对应代码的读取错误是由于维度不匹配导致的。。并非弧度，虽然看上去结果很像是维度导致的
+   - 修改了当点迹依据DOPPLER推算的角度在合理范围内时，反而会导致投票空间越界的BUG，是由于此时的角度区间会越过180度导致的
+   - 存在的问题：霍夫空间中监出点迹过多（大幅提高距离分辨率可以有效改善该问题）。。即便是单个航迹迹也能监测出来大量的航迹（存在重复计数），计划在反向索引的时候，每次完成一条反向索引就删除所有的相关点迹，避免重复索引导致的错误，不过这样也有可能导致错误的航迹侵占正确航迹的点迹，导致正确航迹无法被索引出来。。需要进行对比实验验证一下
+   - 存在的问题： 霍夫变换采用过大分辨率会导致数据量爆炸，而且目前尚且没明确增加角度分辨率能否进一步剔除无用点迹，需要进行对比实验。。总体来说我觉得霍夫变换可能不是很可行了，后续我还是希望MHT算法能完成
+2. 完善了MATLAB脚本，后续合并到项目中，作为单元测试的一部分，验证整个流程的正确性和性能表现
+3. **TODO / 明日计划**
+   - 反向索引完成后删除相关点迹，避免重复索引导致的错误
+   - 继续完善单元测试，构造包含4批点迹的测试场景，验证整个流程的正确性和性能表现
