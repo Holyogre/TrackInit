@@ -114,7 +114,7 @@ namespace track_project
         // 雷达点迹基础信息，传入前确定
         double longitude = 0.0; // 经度，单位度
         double latitude = 0.0;  // 纬度，单位度
-        double doppler = 0.0;   // 径向速度，m/s
+        double doppler = 0.0;   // 径向速度，靠近时为正远离时候为负，m/s
 
         // 有AIS数据引入后的点迹信息
         double sog = 0.0; // 对地速度,m/s

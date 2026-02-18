@@ -29,9 +29,10 @@ namespace track_project
      * @param track_size 航迹容量上限
      * @param point_size 点迹容量上限
      *****************************************************************************/
-    ManagementService::ManagementService(std::uint32_t track_size, std::uint32_t point_size)
+    ManagementService::ManagementService(double lon_min, double lon_max, double lat_min, double lat_max,
+                                         std::uint32_t track_size, std::uint32_t point_size)
         : tracker_manager_(track_size, point_size),
-          track_visualizer_(0, 1.0, 0, 1.0, track_size, point_size),
+          track_visualizer_(lon_min, lon_max, lat_min, lat_max, track_size, point_size),
           stop_flag_(false)
     {
         // 启动工作线程

@@ -160,3 +160,15 @@
     - 功能性测试还有两个process没完成
     - process_vote_points_in_cluster的一票未投需要修改
     - 位扩展类不写了，最近几天先尽快完成这个航迹起始算法的开发和测试
+
+
+# TODO 
+改到280行：
+            heading3 = heading1 - M_PI;
+            heading4 = M_PI;
+            heading1 = 0.0;
+            heading2 = heading2 - 2 * M_PI;
+            vote_in_hough_space(heading1, heading2, rel_x, rel_y, batch, point.doppler, it_clust.vote_area);
+            vote_in_hough_space(heading3, heading4, rel_x, rel_y, batch, point.doppler, it_clust.vote_area);
+            确认度数正确，准备检查函数：vote_in_hough_space
+            

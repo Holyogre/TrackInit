@@ -44,12 +44,17 @@ namespace track_project
     {
     public:
         /*****************************************************************************
-         * @brief 构造函数
+         * @brief 构造新的 Management Service 对象
          *
+         * @param lon_min 经度最小值
+         * @param lon_max 经度最大值
+         * @param lat_min 纬度最小值
+         * @param lat_max 纬度最大值
          * @param track_size 航迹容量上限
-         * @param point_size 点迹容量上限
+         * @param point_size 单条航迹点迹容量上限
          *****************************************************************************/
-        ManagementService(std::uint32_t track_size = 2000, std::uint32_t point_size = 2000);
+        ManagementService(double lon_min, double lon_max, double lat_min, double lat_max,
+                          std::uint32_t track_size = 2000, std::uint32_t point_size = 2000);
 
         /*****************************************************************************
          * @brief 析构函数，停止工作线程并清理资源

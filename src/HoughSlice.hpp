@@ -40,7 +40,7 @@ namespace track_project::trackinit
         // 截距离散化参数，依据聚类判定直径2*1.41*RADIUS近似计算得到
         static constexpr size_t HOUGH_RHO_DIM = 4 * SLICEHOUGH_CLUSTER_RADIUS_KM / SLICEHOUGH_RHO_RESOLUTION_KM;
 
-        struct Slice // 单个切面的内容
+        struct Slice // 单个切面的内容，雷达站位于x=0,y=0处，坐标单位为km，霍夫变换的角度是东偏北（标准极坐标，不要和cog搞混）
         {
             int current_batch_index;                           // 当前批次索引，从0开始
             std::array<std::vector<TrackPoint>, 4> point_list; // 历史点迹检索

@@ -47,7 +47,7 @@ namespace track_project::trackinit
                 }
             }
 
-            //STEP2 DEBUG宏，用于查看霍夫变换空间投票结果
+            // STEP2 DEBUG宏，用于查看霍夫变换空间投票结果
 #ifndef NDEBUG
             {
                 // 生成文件名
@@ -224,12 +224,12 @@ namespace track_project::trackinit
         }
     }
 
-    // 对于单个点迹进行处理，在霍夫空间中进行投票
+    // 对于单个点迹进行处理，在霍夫空间中进行投票,减少计算量，内部使用极坐标
     void SliceHough::process_point_for_hough_vote(size_t batch, const TrackPoint &point, Slice &it_clust)
     {
-        // 计算点迹相对于聚类中心的坐标
-        double rel_x = point.x - it_clust.center_x;
-        double rel_y = point.y - it_clust.center_y;
+        // 雷达站位于0,0位置
+        double rel_x = point.x;
+        double rel_y = point.y;
 
         // 依据doppler和velocity_max计算所有可能的航向角度序列
         double speed = std::abs(point.doppler); // 取绝对值，单位m/s
@@ -237,26 +237,32 @@ namespace track_project::trackinit
         {
             return; // 速度超过最大值，跳过该点迹
         }
-        double angle_rad = std::acos(speed / track_project::velocity_max); // 计算夹角，弧度，范围[0,pi/2]
-        // 计算两个可能的航向角度（南偏东）
-        double beta = std::atan2(rel_y, rel_x);
-        if (point.doppler > 0) // 速度是正值时是靠近雷达站的，此时需要对beta加π；操作后值域为(0,2*pi)，无需归一化
+
+        // 依据法线和DOPPLER方向联合给出基准航向
+        double line_of_sight_rad = std::atan2(rel_y, rel_x);
+        double base_dir_rad = 0.0;
+        if (point.doppler > 0) // 船只基准航向是泛，此时需要对beta加π；操作后值域为(0,2*pi)，无需归一化
         {
-            beta += M_PI;
-            if (beta >= 2 * M_PI)
+            base_dir_rad = line_of_sight_rad + M_PI;
+            if (base_dir_rad >= 2 * M_PI)
             {
-                beta -= 2 * M_PI;
+                base_dir_rad -= 2 * M_PI;
             }
         }
         else // 不然，值域为(-pi,pi)，需要归一化到(0,2*pi)
         {
-            if (beta < 0)
+            base_dir_rad = line_of_sight_rad;
+            if (base_dir_rad < 0)
             {
-                beta += 2 * M_PI;
+                base_dir_rad += 2 * M_PI;
             }
         }
-        double heading1 = beta - angle_rad;
-        double heading2 = beta + angle_rad;
+
+        // 计算可能的速度方向与视线方向的夹角
+        double angle_rad = std::acos(speed / track_project::velocity_max); // 计算夹角，弧度，范围[0,pi/2]
+
+        double heading1 = base_dir_rad - angle_rad;
+        double heading2 = base_dir_rad + angle_rad;
 
         //  区间为(heading1,heading2)∪(heading3,heading4)，且heading1<=heading2<=heading3<=heading4
         if (heading1 < 0) // 仅有可能heading1小于0

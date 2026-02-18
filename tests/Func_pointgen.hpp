@@ -113,7 +113,8 @@ std::vector<TrackPoint> generate_uniform_points(size_t n_points, int64_t time,
 }
 
 /*****************************************************************************
- * @brief 用于生成符合高斯分布的均匀分布的点迹群
+ * @brief 用于生成符合高斯分布的均匀分布的点迹群，默认法线方向指向正北方向,
+ * 雷达在x=0,y=0处
  *
  * @param n_points 要求生成的点迹数量
  * @param time 时间戳，单位毫秒
@@ -151,13 +152,22 @@ std::vector<TrackPoint> generate_gaussian_points(size_t n_points, int64_t time,
         p.cog = dist_cog(rng);
         double cog_rad = p.cog * M_PI / 180.0;
 
-        // 速度分量
-        p.vx = p.sog * std::cos(cog_rad);
-        p.vy = p.sog * std::sin(cog_rad);
+        // 速度分量,cog为北偏东
+        p.vx = p.sog * std::sin(cog_rad); // vx = sog * sin(cog)
+        p.vy = p.sog * std::cos(cog_rad); // vy = sog * cos(cog)
 
-        // 多普勒速度
-        double point_angle = std::atan2(p.y, p.x);
-        p.doppler = p.sog * std::cos(point_angle - cog_rad);
+        // 2. 视线方向的单位向量（从雷达到目标）
+        double range = std::sqrt(p.x * p.x + p.y * p.y);
+        if (range < 1e-6)
+        {
+            LOG_INFO << "生成点迹时，点迹位置过于接近雷达站，已调整位置以避免除零错误";
+            p.x = 1e-5;
+            p.y = 0;
+            range = 1e-5;
+        } // 避免除零
+        double los_x = -p.x / range; // 指向航向的向量的x分量（东）
+        double los_y = -p.y / range; // 指向航向的向量的y分量（北）
+        p.doppler = p.vx * los_x + p.vy * los_y;
 
         p.time.milliseconds = time;
 

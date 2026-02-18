@@ -39,12 +39,13 @@ using track_project::trackinit::test_HoughSlice;
 TEST_CASE("功能测试", "[FunctionalityCheck]")
 {
     // 随机数种子
-    unsigned int seed = Catch::getSeed();
+    // unsigned int seed = Catch::getSeed();
+    unsigned int seed = 42;
 
     // 生成高斯分布的10个点迹
     auto points = generate_gaussian_points(1, 0,
-                                           SLICEHOUGH_CLUSTER_RADIUS_KM * 2 / 3, SLICEHOUGH_CLUSTER_RADIUS_KM / 4,
-                                           SLICEHOUGH_CLUSTER_RADIUS_KM * 2 / 3, SLICEHOUGH_CLUSTER_RADIUS_KM / 4,
+                                           0, SLICEHOUGH_CLUSTER_RADIUS_KM / 4,
+                                           0, SLICEHOUGH_CLUSTER_RADIUS_KM / 4,
                                            10.0, 5.0,
                                            seed);
     std::vector<std::array<TrackPoint, 4>> new_tracks;
@@ -53,7 +54,7 @@ TEST_CASE("功能测试", "[FunctionalityCheck]")
     SliceHough alg;
 
     // 创建航迹管理器
-    track_project::ManagementService track_manager;
+    track_project::ManagementService track_manager(-0.5, 0.5, -0.5, 0.5); // 经纬度范围
 
     // 绑定回调函数，显示航迹
     alg.set_track_callback([&track_manager](const std::vector<std::array<TrackPoint, 4>> &tracks)
