@@ -4,7 +4,7 @@
 namespace track_project::trackinit
 {
     // ============ SLICEHOUGH 聚类参数 ============
-    constexpr double SLICEHOUGH_CLUSTER_RADIUS_KM = 20.0;    // 聚类切片直径（KM）
+    constexpr double SLICEHOUGH_CLUSTER_RADIUS_KM = 50.0;    // 聚类切片直径（KM）
     constexpr double SLICEHOUGH_CORE_POINT_RADIUS_KM = 5.0; // 核心点点迹邻域半径（KM）
     constexpr int SLICEHOUGH_MAX_POINTS_PER_CLUSTER = 4;     // 每个聚类中最多可以拥有的点迹数量
     constexpr int SLICEHOUGH_MIN_POINTS_PER_CORE = 3;        // 每个核心点最少需要拥有的点迹数量
