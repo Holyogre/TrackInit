@@ -51,16 +51,23 @@ endfunction()
 # add_track_test(test_ClustDBSCAN
 #                 test_ClustDBSCAN.cpp
 #                 ../src/Func_dbscan.cpp)
-add_track_test(test_HoughSlice
-                test_HoughSlice.cpp
-                ../src/HoughSlice.cpp
-                ../src/Func_dbscan.cpp
-                ${MYUTILS_SOURCES}
-                ${TRACKMANAGER_SOURCES})
+# add_track_test(test_BitArray
+#                 test_BitArray.cpp
+#                 ../src/BitArray.hpp
+#                 ${MYUTILS_SOURCES})
+# add_track_test(test_HoughSlice
+#                 test_HoughSlice.cpp
+#                 ../src/HoughSlice.cpp
+#                 ../src/Func_dbscan.cpp
+#                 ${MYUTILS_SOURCES}
+#                 ${TRACKMANAGER_SOURCES})
+
 
 
 
 # 注册数据层滚动
 # add_test(NAME testObjectPool功能测试 COMMAND testObjectPool "[memory_pool][]")
 # add_test(NAME ClustDBSCAN COMMAND test_ClustDBSCAN "[dbscan][]")
+# add_test(NAME bitARRAY全面测试 COMMAND test_BitArray "[bitarray][]")
 add_test(NAME HoughSlice功能测试 COMMAND test_HoughSlice "[FunctionalityCheck]")
+

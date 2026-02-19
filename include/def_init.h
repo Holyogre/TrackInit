@@ -4,13 +4,15 @@
 namespace track_project::trackinit
 {
     // ============ SLICEHOUGH 聚类参数 ============
-    constexpr double SLICEHOUGH_CLUSTER_RADIUS_KM = 50.0;    // 聚类切片直径（KM）
+    constexpr double SLICEHOUGH_CLUSTER_RADIUS_KM = 50.0;   // 聚类切片直径（KM）
     constexpr double SLICEHOUGH_CORE_POINT_RADIUS_KM = 5.0; // 核心点点迹邻域半径（KM）
-    constexpr int SLICEHOUGH_MAX_POINTS_PER_CLUSTER = 4;     // 每个聚类中最多可以拥有的点迹数量
-    constexpr int SLICEHOUGH_MIN_POINTS_PER_CORE = 3;        // 每个核心点最少需要拥有的点迹数量
+    constexpr int SLICEHOUGH_MAX_POINTS_PER_CLUSTER = 4;    // 每个聚类中最多可以拥有的点迹数量
+    constexpr int SLICEHOUGH_MIN_POINTS_PER_CORE = 3;       // 每个核心点最少需要拥有的点迹数量
     // ============ SLICEHOUGH 霍夫变换参数 ============
     constexpr double SLICEHOUGH_THETA_RESOLUTION_DEG = 1.0; // 霍夫角度分辨率（度）,得是180的公因数
-    constexpr double SLICEHOUGH_RHO_RESOLUTION_KM = 0.01;    // 霍夫距离分辨率（公里）
+    constexpr double SLICEHOUGH_RHO_RESOLUTION_KM = 0.05;   // 霍夫距离分辨率（公里）
+    constexpr size_t SLICEHOUGH_DOPPLER_BIT_NUM = 64;       // 霍夫变换中多普勒速度位数，必须是32的整数倍
+    constexpr size_t SLICEHOUGH_BATCH_NUM = 4;              // 批次数量，必须是大于4
 
     /*****************************************************************************
      * @brief 状态码

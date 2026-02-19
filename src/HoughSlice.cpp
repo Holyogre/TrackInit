@@ -66,19 +66,14 @@ namespace track_project::trackinit
                     file.write(reinterpret_cast<const char *>(dims), 2 * sizeof(uint32_t));
 
                     // 统计信息
-                    uint64_t total_votes = 0;
-                    uint32_t non_zero_count = 0;
 
                     // 写入数据并统计
                     for (size_t theta = 0; theta < HOUGH_THETA_DIM; ++theta)
                     {
                         for (size_t rho = 0; rho < HOUGH_RHO_DIM; ++rho)
                         {
-                            uint64_t votes = it_clust->vote_area[theta][rho];
-                            file.write(reinterpret_cast<const char *>(&votes), sizeof(uint64_t));
-                            total_votes += votes;
-                            if (votes > 0)
-                                non_zero_count++;
+                            BitArray<256> votes = it_clust->vote_area[theta][rho];
+                            file.write(reinterpret_cast<const char *>(&votes), sizeof(BitArray<256>));
                         }
                     }
 
@@ -275,66 +270,96 @@ namespace track_project::trackinit
     // 对于霍夫变换空间中的指定区间进行特殊投票
     void SliceHough::vote_in_hough_space(const double heading_start, const double heading_end, const double doppler,
                                          const double rel_x, const double rel_y, const size_t batch,
-                                         std::array<std::array<std::uint64_t, HOUGH_RHO_DIM>, HOUGH_THETA_DIM> &vote_area)
+                                         std::array<std::array<BitArray<HOUGH_VOTE_BIT_NUM>, HOUGH_RHO_DIM>, HOUGH_THETA_DIM> &vote_area)
     {
         // 计算起始和结束的角度索引
         std::uint32_t angle_idx_start = static_cast<std::uint32_t>(heading_start * 180.0 / M_PI / SLICEHOUGH_THETA_RESOLUTION_DEG);
         std::uint32_t angle_idx_end = static_cast<std::uint32_t>(heading_end * 180.0 / M_PI / SLICEHOUGH_THETA_RESOLUTION_DEG);
 
-        // 计算速度索引
+        // 计算速度索引 - 由宏控制位数
         double ratio = doppler / track_project::velocity_max;
-        ratio = std::clamp(ratio, -1.0, 1.0); // 避免越界
-        std::uint16_t doppler_bitmask = 0;
-        if (ratio < 0)
+        ratio = std::clamp(ratio, -1.0, 1.0);
+
+        // 根据SLICEHOUGH_DOPPLER_BIT_NUM计算每侧级别数
+        constexpr size_t LEVELS_PER_SIDE = SLICEHOUGH_DOPPLER_BIT_NUM / 2; // 正负各一半
+        constexpr size_t BYTES_PER_BATCH = SLICEHOUGH_DOPPLER_BIT_NUM / 8; // 每批次的字节数
+
+        // 创建掩码缓冲区（按字节存储，小端序）
+        std::vector<uint8_t> mask_bytes(BYTES_PER_BATCH, 0);
+
+        // 速度位的存储布局（连续均匀分布）：
+        // 低半区 (bits 0 到 SLICEHOUGH_DOPPLER_BIT_NUM/2 - 1)：存储负速度（从最大负到最小负）
+        //    [bit0: 最大负速度 (-1.0), bit1: 次大负速度 (-0.9), ..., bit31: 最小负速度 (-0.1)]
+        // 高半区 (bits SLICEHOUGH_DOPPLER_BIT_NUM/2 到 SLICEHOUGH_DOPPLER_BIT_NUM-1)：存储正速度（从最小正到最大正）
+        //    [bit32: 最小正速度 (+0.1), bit33: 次小正速度 (+0.2), ..., bit63: 最大正速度 (+1.0)]
+        //
+        // 这样整个速度范围是连续的：-1.0, -0.9, ..., -0.1, +0.1, +0.2, ..., +1.0
+        // ratio == 0 的情况：不投票（不可能存在这种点，除非出BUG了）
+        if (ratio == 0)
         {
-            // 负数：使用高位部分 (bits 15..8)
-            // 将[-1.0, 0)映射到[15, 8]位:-1~0b1000_0000_0000_0000 ~ 0~-0b0001_0000_0000_0000
-            double abs_ratio = -ratio;                                       // 0.0 ~ 1.0
-            int bit_pos = 8 + static_cast<int>(std::floor(abs_ratio * 8.0)); // 8-15位
-            bit_pos = std::clamp(bit_pos, 8, 15);
-            doppler_bitmask = 1U << bit_pos;
+            return;
         }
-        else if (ratio > 0) // 不可能存在静止点，此类点迹无法被检测检出
+        else if (ratio < 0)
         {
-            // 正数：使用低位部分 (bits 7..0)
-            // 将(0, 1.0]映射到[7, 0]位:0~0b0000_0000_0000_0001 ~ 1~0b0000_0000_1000_0000
-            int bit_pos = static_cast<int>(std::floor(ratio * 8.0));
-            bit_pos = std::clamp(bit_pos, 0, 7);
-            doppler_bitmask = 1U << bit_pos;
+            // 负数：使用低半区 (bits 0 到 SLICEHOUGH_DOPPLER_BIT_NUM/2 - 1)
+            double abs_ratio = -ratio; // 0.0 ~ 1.0
+            int level = static_cast<int>(std::floor(abs_ratio * LEVELS_PER_SIDE));
+            level = std::clamp(level, 0, static_cast<int>(LEVELS_PER_SIDE) - 1);
+
+            // 负速度：从最大负（bit0）到最小负（bit31）
+            // level=0 (|速度|最大, -1.0) → bit_pos=0
+            // level=31 (|速度|最小, -0.1) → bit_pos=31
+            int bit_pos = level; // 注意：这里直接用level，因为负速度在低半区
+
+            // 设置对应位
+            size_t byte_idx = bit_pos / 8;
+            size_t bit_in_byte = bit_pos % 8;
+            mask_bytes[byte_idx] |= (1 << bit_in_byte);
+        }
+        else if (ratio > 0)
+        {
+            // 正数：使用高半区 (bits SLICEHOUGH_DOPPLER_BIT_NUM/2 到 SLICEHOUGH_DOPPLER_BIT_NUM-1)
+            int level = static_cast<int>(std::floor(ratio * LEVELS_PER_SIDE));
+            level = std::clamp(level, 0, static_cast<int>(LEVELS_PER_SIDE) - 1);
+
+            // 正速度：从最小正（bit32）到最大正（bit63）
+            // level=0 (+0.1) → bit_pos=32
+            // level=31 (+1.0) → bit_pos=63
+            int bit_pos = SLICEHOUGH_DOPPLER_BIT_NUM / 2 + level;
+
+            // 设置对应位
+            size_t byte_idx = bit_pos / 8;
+            size_t bit_in_byte = bit_pos % 8;
+            mask_bytes[byte_idx] |= (1 << bit_in_byte);
         }
 
-        // 遍历所有聚类区域，进行投票
+        // 遍历所有角度索引进行投票
         for (std::uint32_t angle_idx = angle_idx_start; angle_idx < angle_idx_end; ++angle_idx)
         {
-
-            double theta = angle_idx * SLICEHOUGH_THETA_RESOLUTION_DEG * M_PI / 180.0; // 转为弧度
+            double theta = angle_idx * SLICEHOUGH_THETA_RESOLUTION_DEG * M_PI / 180.0;
             double distance = rel_x * std::cos(theta) + rel_y * std::sin(theta);
 
-            // 计算距离索引,distance范围[-2R,2R]
+            // 计算距离索引
             int distance_idx = static_cast<int>((distance + 2 * SLICEHOUGH_CLUSTER_RADIUS_KM) / SLICEHOUGH_RHO_RESOLUTION_KM);
             if (distance_idx < 0 || distance_idx >= static_cast<int>(HOUGH_RHO_DIM))
             {
-                continue; // 距离索引越界，跳过
+                continue;
             }
 
-            // 在对应位置投票，使用位或存储不同速度的信息，避免重复计数
-            if (angle_idx >= HOUGH_THETA_DIM) // 角度索引越界,说明是heading超过180度，进行反向
-            {
-                vote_area[angle_idx - HOUGH_THETA_DIM][distance_idx] |= (static_cast<std::uint64_t>(doppler_bitmask) << (batch * 16));
-            }
-            else
-            { // 正常情况
-                vote_area[angle_idx][distance_idx] |= (static_cast<std::uint64_t>(doppler_bitmask) << (batch * 16));
-            }
+            // 获取对应的投票单元
+            BitArray<HOUGH_VOTE_BIT_NUM> &cell = (angle_idx >= HOUGH_THETA_DIM)
+                                                     ? vote_area[angle_idx - HOUGH_THETA_DIM][distance_idx]
+                                                     : vote_area[angle_idx][distance_idx];
 
-            // if (batch == 0 && doppler_bitmask != 0) // 仅在第一批次且有速度信息时输出调试日志，避免过多日志
-            // {
-            //     LOG_DEBUG << "投票了一个点: 角度索引=" << angle_idx << ", 距离索引=" << distance_idx;
-            // }
+            // 计算这个批次在总位数中的起始字节偏移
+            size_t byte_offset = batch * BYTES_PER_BATCH;
+
+            // 使用or_bytes进行投票
+            cell.or_bytes(byte_offset, mask_bytes.data(), BYTES_PER_BATCH);
         }
     }
 
-    // 峰值检测
+    // 峰值检测,从霍夫变换空间中提取检测到的直线参数列表
     std::vector<std::array<double, 3>> SliceHough::process_extract_peak_from_hough_space(Slice &cluster) const
     {
         std::vector<std::array<double, 3>> detected_lines; // 存储检测到的直线参数（theta, rho, doppler）
@@ -343,28 +368,52 @@ namespace track_project::trackinit
         {
             for (size_t distance_idx = 0; distance_idx < HOUGH_RHO_DIM; ++distance_idx)
             {
-                // 提取峰值
-                std::uint16_t peak_votes = peak_filter(angle_idx, distance_idx, cluster.vote_area);
-                if (peak_votes == 0)
-                {
-                    continue; // 无峰值，跳过
-                }
+                // 提取4个批次的共同投票位（返回SLICEHOUGH_DOPPLER_BIT_NUM位的BitArray）
+                auto common_votes = peak_filter(angle_idx, distance_idx, cluster.vote_area);
 
-                // 对每一个速度位进行处理
-                for (int speed_bit = 0; speed_bit < 16; ++speed_bit)
+                // 如果没有共同投票，跳过
+                bool has_votes = false;
+                for (size_t i = 0; i < SLICEHOUGH_DOPPLER_BIT_NUM; ++i)
                 {
-                    if ((peak_votes >> speed_bit) & 0x1)
+                    if (common_votes.get_bit(i))
                     {
-                        // 计算对应的doppler值
+                        has_votes = true;
+                        break;
+                    }
+                }
+                if (!has_votes)
+                    continue;
+
+                // 遍历所有速度位
+                for (size_t speed_bit = 0; speed_bit < SLICEHOUGH_DOPPLER_BIT_NUM; ++speed_bit)
+                {
+                    if (common_votes.get_bit(speed_bit))
+                    {
                         double ratio = 0.0;
-                        if (speed_bit >= 8)
+
+                        // 根据布局计算ratio：
+                        // 低半区 (bits 0 到 SLICEHOUGH_DOPPLER_BIT_NUM/2 - 1)：负速度，从最大负(-1.0)到最小负
+                        // 高半区 (bits SLICEHOUGH_DOPPLER_BIT_NUM/2 到 SLICEHOUGH_DOPPLER_BIT_NUM-1)：正速度，从最小正到最大正(+1.0)
+
+                        constexpr size_t HALF_BITS = SLICEHOUGH_DOPPLER_BIT_NUM / 2;
+                        constexpr size_t MAX_LEVEL = HALF_BITS - 1;
+                        constexpr double SPEED_STEP = 1.0 / HALF_BITS; // 每级的速度增量
+
+                        if (speed_bit < HALF_BITS) // 负速度区域
                         {
-                            ratio = -(static_cast<double>(speed_bit - 8)) / 8.0; // 注意：应该是speed_bit - 8，不是+1
+                            // speed_bit = 0        → -1.0
+                            // speed_bit = MAX_LEVEL → -SPEED_STEP
+                            // 公式：从 -1.0 逐渐增加到接近0
+                            ratio = -1.0 + speed_bit * SPEED_STEP;
                         }
-                        else
+                        else // 正速度区域
                         {
-                            ratio = static_cast<double>(speed_bit) / 8.0; // 注意：应该是speed_bit，不是speed_bit+1
+                            // speed_bit = HALF_BITS       → +SPEED_STEP
+                            // speed_bit = SLICEHOUGH_DOPPLER_BIT_NUM-1 → +1.0
+                            size_t level = speed_bit - HALF_BITS;
+                            ratio = (level + 1) * SPEED_STEP; // +1 是为了跳过0
                         }
+
                         double doppler = ratio * track_project::velocity_max;
 
                         // 计算theta和rho值
@@ -382,28 +431,38 @@ namespace track_project::trackinit
     }
 
     // 提取目标区域峰值
-    std::uint16_t SliceHough::peak_filter(size_t angle_idx, size_t distance_idx,
-                                          std::array<std::array<std::uint64_t, HOUGH_RHO_DIM>, HOUGH_THETA_DIM> &vote_area) const
+    BitArray<SLICEHOUGH_DOPPLER_BIT_NUM> SliceHough::peak_filter(
+        const size_t angle_idx, const size_t distance_idx,
+        const std::array<std::array<BitArray<HOUGH_VOTE_BIT_NUM>, HOUGH_RHO_DIM>, HOUGH_THETA_DIM> &vote_area) const
     {
-        std::uint64_t cell_value = vote_area[angle_idx][distance_idx];
+        const auto &cell = vote_area[angle_idx][distance_idx];
 
-        // 1. 提取4个批次的16位值
-        std::uint16_t batch0 = cell_value & 0xFFFF;
-        std::uint16_t batch1 = (cell_value >> 16) & 0xFFFF;
-        std::uint16_t batch2 = (cell_value >> 32) & 0xFFFF;
-        std::uint16_t batch3 = (cell_value >> 48) & 0xFFFF;
+        constexpr size_t BYTES_PER_BATCH = SLICEHOUGH_DOPPLER_BIT_NUM / 8;
+        constexpr size_t BATCH_NUM = HOUGH_VOTE_BIT_NUM / SLICEHOUGH_DOPPLER_BIT_NUM;
 
-        // 2. 计算交集：四点共同的速度位
-        std::uint16_t common_speeds = batch0 & batch1 & batch2 & batch3;
+        // 分配两个缓冲区
+        std::vector<uint8_t> buf1(BYTES_PER_BATCH);
+        std::vector<uint8_t> buf2(BYTES_PER_BATCH);
 
-        // 3. 如果没有共同速度，返回0
-        if (common_speeds == 0)
+        // 读取第一个批次
+        cell.read_bytes(buf1.data(), 0, BYTES_PER_BATCH);
+
+        // 创建结果对象并写入
+        BitArray<SLICEHOUGH_DOPPLER_BIT_NUM> result;
+        result.write_bytes(buf1.data(), 0, BYTES_PER_BATCH);
+
+        // 依次处理后续批次
+        for (size_t batch = 1; batch < BATCH_NUM; ++batch)
         {
-            return 0;
+            cell.read_bytes(buf2.data(), batch * BYTES_PER_BATCH, BYTES_PER_BATCH);
+
+            BitArray<SLICEHOUGH_DOPPLER_BIT_NUM> current;
+            current.write_bytes(buf2.data(), 0, BYTES_PER_BATCH);
+
+            result &= current;
         }
 
-        // 4. 返回共同速度位掩码
-        return common_speeds;
+        return result;
     }
 
     // 回溯点迹

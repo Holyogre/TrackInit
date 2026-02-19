@@ -26,6 +26,7 @@
 #include "TrackInitBase.hpp"
 #include "ObjectPool.hpp"
 #include <cstring>
+#include "BitArray.hpp"
 
 namespace track_project::trackinit
 {
@@ -39,6 +40,8 @@ namespace track_project::trackinit
         static constexpr size_t HOUGH_THETA_DIM = 180 / SLICEHOUGH_THETA_RESOLUTION_DEG;
         // 截距离散化参数，依据聚类判定直径2*1.41*RADIUS近似计算得到
         static constexpr size_t HOUGH_RHO_DIM = 4 * SLICEHOUGH_CLUSTER_RADIUS_KM / SLICEHOUGH_RHO_RESOLUTION_KM;
+        // 霍夫变换空间的位数，等于批次数*每批次的速度位数
+        static constexpr size_t HOUGH_VOTE_BIT_NUM = SLICEHOUGH_BATCH_NUM * SLICEHOUGH_DOPPLER_BIT_NUM;
 
         struct Slice // 单个切面的内容，雷达站位于x=0,y=0处，坐标单位为km，霍夫变换的角度是东偏北（标准极坐标，不要和cog搞混）
         {
@@ -46,7 +49,7 @@ namespace track_project::trackinit
             std::array<std::vector<TrackPoint>, 4> point_list; // 历史点迹检索
             double center_x, center_y;                         // 聚类中心点坐标
             // 角度索引依据北偏东做分割，正北索引为0，是射线而非直线；截距索引依据负到正做分割，0点为 -2R，2R点为 +2R
-            std::array<std::array<std::uint64_t, HOUGH_RHO_DIM>, HOUGH_THETA_DIM> vote_area;
+            std::array<std::array<BitArray<HOUGH_VOTE_BIT_NUM>, HOUGH_RHO_DIM>, HOUGH_THETA_DIM> vote_area;
 
             // 为ObjectPool添加clear方法
             void clear()
@@ -64,7 +67,13 @@ namespace track_project::trackinit
                 center_y = 0.0;
 
                 // 清零vote_area
-                vote_area = {};
+                for (auto &theta_array : vote_area)
+                {
+                    for (auto &bit_array : theta_array)
+                    {
+                        bit_array.clear();
+                    }
+                }
             }
         };
 
@@ -118,7 +127,7 @@ namespace track_project::trackinit
          *****************************************************************************/
         void vote_in_hough_space(const double heading_start, const double heading_end, const double doppler,
                                  const double rel_x, const double rel_y, const size_t batch,
-                                 std::array<std::array<std::uint64_t, HOUGH_RHO_DIM>, HOUGH_THETA_DIM> &vote_area);
+                                 std::array<std::array<BitArray<HOUGH_VOTE_BIT_NUM>, HOUGH_RHO_DIM>, HOUGH_THETA_DIM> &vote_area);
 
         /*****************************************************************************
          * @brief 从霍夫变换空间中提取峰值，返回检测到的直线参数列表
@@ -137,8 +146,9 @@ namespace track_project::trackinit
          * @param vote_area 投票区域，位于Slice结构体内
          * @return 返回一个峰值投票数，将速度均匀分成16份，每一位表示该位置上是否有对应速度点存在
          *****************************************************************************/
-        std::uint16_t peak_filter(const size_t angle_idx, const size_t distance_idx,
-                                  std::array<std::array<std::uint64_t, HOUGH_RHO_DIM>, HOUGH_THETA_DIM> &vote_area) const;
+        BitArray<SLICEHOUGH_DOPPLER_BIT_NUM> peak_filter(
+            const size_t angle_idx, const size_t distance_idx,
+            const std::array<std::array<BitArray<HOUGH_VOTE_BIT_NUM>, HOUGH_RHO_DIM>, HOUGH_THETA_DIM> &vote_area) const;
 
         /*****************************************************************************
          * @brief 回溯点迹，依据检测到的直线参数，从聚类中提取符合条件的点迹，组成航迹
