@@ -55,12 +55,12 @@ endfunction()
 #                 test_BitArray.cpp
 #                 ../src/BitArray.hpp
 #                 ${MYUTILS_SOURCES})
-# add_track_test(test_HoughSlice
-#                 test_HoughSlice.cpp
-#                 ../src/HoughSlice.cpp
-#                 ../src/Func_dbscan.cpp
-#                 ${MYUTILS_SOURCES}
-#                 ${TRACKMANAGER_SOURCES})
+add_track_test(test_HoughSlice
+                test_HoughSlice.cpp
+                ../src/HoughSlice.cpp
+                ../src/Func_dbscan.cpp
+                ${MYUTILS_SOURCES}
+                ${TRACKMANAGER_SOURCES})
 
 
 

@@ -9,95 +9,150 @@
 
 namespace track_project::trackinit
 {
+    // 主程序
     ProcessStatus SliceHough::process(const std::vector<TrackPoint> &points, std::vector<std::array<TrackPoint, 4>> &new_track)
     {
         // 清空输出航迹
         new_track.clear();
 
-        // STEP1：对于新来的点迹生成聚类
+        // ==================== STEP1: 聚类(HOUGHSLICE)生成 ====================
         process_cluster_generation(points);
-        // STEP1 DEBUG宏，用于查看当前聚类信息
-        LOG_DEBUG << "=== 聚类信息可视化 ===";
+// STEP1 DEBUG宏，用于查看当前聚类信息
+#ifndef NDEBUG
+        LOG_DEBUG << "=== [STEP1] 聚类信息可视化 ===";
         LOG_DEBUG << "当前聚类数量：" << ClustArea.get_allocated_count(); // ⚠仅建议DEBUG下使用这个函数，因为真的很浪费时间
         for (auto &clust : ClustArea.get_allocated_ptrs())
         {
-            LOG_DEBUG << "当前聚类中心：(" << clust->center_x << "," << clust->center_y << ")，共" << clust->current_batch_index << "批次："
-                      << "第一批次点迹数量：" << clust->point_list[0].size()
-                      << ", 第二批次点迹数量：" << clust->point_list[1].size()
-                      << ", 第三批次点迹数量：" << clust->point_list[2].size()
-                      << ", 第四批次点迹数量：" << clust->point_list[3].size();
+            LOG_DEBUG << "当前聚类中心：(" << clust->center_x << "," << clust->center_y << ")，共" << clust->current_batch_index << "批次：";
+            for (int batch = 0; batch < SLICEHOUGH_BATCH_NUM; ++batch)
+            {
+                LOG_DEBUG << "第" << batch + 1 << "批次点迹数量：" << clust->point_list[batch].size();
+            }
         }
+#endif
 
-        // STEP2：对于当前聚类中的所有点迹进行霍夫变换投票
-        LOG_DEBUG << "=== 霍夫投票过程可视化 ===";
+        // ==================== STEP2: 霍夫变换投票 ====================
         std::vector<Slice *> clustAera_list = ClustArea.get_allocated_ptrs();
         for (auto &it_clust : clustAera_list)
         {
-            if (it_clust->current_batch_index != 3)
+            if (it_clust->current_batch_index != SLICEHOUGH_BATCH_NUM - 1)
             {
                 LOG_DEBUG << "聚类(" << it_clust->center_x << "," << it_clust->center_y << "): 批次数不足，跳过投票";
                 continue; // 批次数不足，跳过
             }
 
-            for (size_t batch = 0; batch <= 3; ++batch)
+            for (size_t batch = 0; batch < SLICEHOUGH_BATCH_NUM; ++batch)
             {
-                for (const auto &point : it_clust->point_list[batch]) // 对于每个点执行官投票
+                for (const auto &point : it_clust->point_list[batch]) // 对于每个点执行霍夫变换投票
                 {
                     process_point_for_hough_vote(batch, point, *it_clust);
                 }
             }
-
-            // STEP2 DEBUG宏，用于查看霍夫变换空间投票结果
-#ifndef NDEBUG
-            {
-                // 生成文件名
-                std::stringstream filename;
-                filename << "/home/holyogre/TrackInit/hough_debug_"
-                         << std::fixed << std::setprecision(1) << it_clust->center_x << "_"
-                         << std::setprecision(1) << it_clust->center_y << ".dat";
-
-                // 打开文件
-                std::ofstream file(filename.str(), std::ios::binary);
-                if (file.is_open())
-                {
-                    // 写入维度
-                    uint32_t dims[2] = {static_cast<uint32_t>(HOUGH_RHO_DIM),
-                                        static_cast<uint32_t>(HOUGH_THETA_DIM)};
-                    file.write(reinterpret_cast<const char *>(dims), 2 * sizeof(uint32_t));
-
-                    // 统计信息
-
-                    // 写入数据并统计
-                    for (size_t theta = 0; theta < HOUGH_THETA_DIM; ++theta)
-                    {
-                        for (size_t rho = 0; rho < HOUGH_RHO_DIM; ++rho)
-                        {
-                            BitArray<256> votes = it_clust->vote_area[theta][rho];
-                            file.write(reinterpret_cast<const char *>(&votes), sizeof(BitArray<256>));
-                        }
-                    }
-
-                    file.close();
-                }
-            }
-#endif
         }
 
-        // 峰值检测和航迹生成
+// STEP2 DEBUG宏，用于查看霍夫变换空间投票结果
+#ifndef NDEBUG
+        LOG_DEBUG << "=== [STEP2] 霍夫投票过程可视化 ===";
         for (auto &it_clust : clustAera_list)
         {
-            if (it_clust->current_batch_index != 3)
+            // 生成文件名
+            std::stringstream filename;
+            filename << "/home/holyogre/TrackInit/hough_debug_"
+                     << std::fixed << std::setprecision(1) << it_clust->center_x << "_"
+                     << std::setprecision(1) << it_clust->center_y << ".dat";
+
+            // 打开文件
+            std::ofstream file(filename.str(), std::ios::binary);
+            if (file.is_open())
+            {
+                // 写入维度
+                uint32_t dims[2] = {static_cast<uint32_t>(HOUGH_RHO_DIM),
+                                    static_cast<uint32_t>(HOUGH_THETA_DIM)};
+                file.write(reinterpret_cast<const char *>(dims), 2 * sizeof(uint32_t));
+
+                // 统计信息
+
+                // 写入数据并统计
+                for (size_t theta = 0; theta < HOUGH_THETA_DIM; ++theta)
+                {
+                    for (size_t rho = 0; rho < HOUGH_RHO_DIM; ++rho)
+                    {
+                        BitArray<256> votes = it_clust->vote_area[theta][rho];
+                        file.write(reinterpret_cast<const char *>(&votes), sizeof(BitArray<256>));
+                    }
+                }
+
+                file.close();
+            }
+            LOG_DEBUG << "结果存储在" << filename.str();
+        }
+#endif
+
+        // ========================================STEP3~5:峰值检测、点迹凝聚、航迹生成========================================
+        for (auto &it_clust : clustAera_list)
+        {
+            if (it_clust->current_batch_index != SLICEHOUGH_BATCH_NUM - 1)
             {
                 LOG_DEBUG << "聚类(" << it_clust->center_x << "," << it_clust->center_y << "): 批次数不足，跳过峰值检测";
                 continue; // 批次数不足，跳过
             }
 
-            // STEP3:峰值检测
-            std::vector<std::array<double, 3>> detected_lines = process_extract_peak_from_hough_space(*it_clust);
-            LOG_DEBUG << "聚类中心(" << it_clust->center_x << "," << it_clust->center_y << ")检测到直线数量：" << detected_lines.size();
+            // ==================== STEP3: 峰值检测 ====================
+            std::vector<std::vector<std::array<size_t, 2>>> detected_lines = process_extract_peak_from_hough_space(*it_clust);
 
-            // STEP4:回溯点迹，生成航迹
-            process_backtrack_points(detected_lines, *it_clust, new_track);
+#ifndef NDEBUG
+            LOG_DEBUG << "===== [STEP3] 峰值检测 =====";
+            LOG_DEBUG << "聚类中心(" << it_clust->center_x << "," << it_clust->center_y << ")";
+            size_t total_peaks = 0;
+            std::vector<size_t> doppler_counts(detected_lines.size(), 0);
+            for (size_t d = 0; d < detected_lines.size(); ++d)
+            {
+                doppler_counts[d] = detected_lines[d].size();
+                total_peaks += doppler_counts[d];
+            }
+            LOG_DEBUG << "检测到峰值总数：" << total_peaks;
+
+            // 输出有峰值的多普勒位
+            std::stringstream doppler_stats;
+            doppler_stats << "各多普勒速度位峰值数量: ";
+            bool first = true;
+            for (size_t d = 0; d < detected_lines.size(); ++d)
+            {
+                if (doppler_counts[d] > 0)
+                {
+                    if (!first)
+                        doppler_stats << ", ";
+                    doppler_stats << d << ":" << doppler_counts[d];
+                    first = false;
+                }
+            }
+            if (first)
+            {
+                doppler_stats << "无";
+            }
+            LOG_DEBUG << doppler_stats.str();
+#endif
+
+            // ==================== STEP4: 点迹凝聚 ====================
+            std::vector<std::array<double, 3>> condensed_lines = process_condense_detected_lines(detected_lines);
+#ifndef NDEBUG
+            LOG_DEBUG << "===== [STEP4] 点迹凝聚 =====";
+            LOG_DEBUG << "凝聚后直线数量：" << condensed_lines.size();
+            // 输出每条凝聚直线的详细参数
+            for (size_t i = 0; i < condensed_lines.size(); ++i)
+            {
+                const auto &line = condensed_lines[i];
+                LOG_DEBUG << "直线[" << i << "]: theta=" << line[0]
+                          << " rad (" << line[0] * 180.0 / M_PI << "°)"
+                          << ", rho=" << line[1] << " km"
+                          << ", doppler=" << line[2] << " m/s";
+            }
+
+#endif
+
+            // ==================== STEP5: 航迹生成 ====================
+            // STEP5不需要DEBUG日志，可以从显控查看结果
+            process_backtrack_points(condensed_lines, *it_clust, new_track);
         }
 
         // 调用回调函数发送航迹
@@ -107,7 +162,7 @@ namespace track_project::trackinit
         // 删除已经执行过航迹生成的霍夫变换切片
         for (auto &it_clust : clustAera_list)
         {
-            if (it_clust->current_batch_index == 3)
+            if (it_clust->current_batch_index == SLICEHOUGH_BATCH_NUM - 1)
             {
                 ClustArea.release_target(it_clust);
             }
@@ -287,7 +342,7 @@ namespace track_project::trackinit
         // 创建掩码缓冲区（按字节存储，小端序）
         std::vector<uint8_t> mask_bytes(BYTES_PER_BATCH, 0);
 
-        // 速度位的存储布局（连续均匀分布）：
+        // 构造一个批次的速度位的存储布局（连续均匀分布）：
         // 低半区 (bits 0 到 SLICEHOUGH_DOPPLER_BIT_NUM/2 - 1)：存储负速度（从最大负到最小负）
         //    [bit0: 最大负速度 (-1.0), bit1: 次大负速度 (-0.9), ..., bit31: 最小负速度 (-0.1)]
         // 高半区 (bits SLICEHOUGH_DOPPLER_BIT_NUM/2 到 SLICEHOUGH_DOPPLER_BIT_NUM-1)：存储正速度（从最小正到最大正）
@@ -360,74 +415,37 @@ namespace track_project::trackinit
     }
 
     // 峰值检测,从霍夫变换空间中提取检测到的直线参数列表
-    std::vector<std::array<double, 3>> SliceHough::process_extract_peak_from_hough_space(Slice &cluster) const
+    std::vector<std::vector<std::array<size_t, 2>>> SliceHough::process_extract_peak_from_hough_space(Slice &cluster) const
     {
-        std::vector<std::array<double, 3>> detected_lines; // 存储检测到的直线参数（theta, rho, doppler）
+        // 外层vector按doppler索引分组，内层vector存储该doppler下的(angle_idx, distance_idx)索引对
+        std::vector<std::vector<std::array<size_t, 2>>> detected_lines_by_doppler(SLICEHOUGH_DOPPLER_BIT_NUM);
 
         for (size_t angle_idx = 0; angle_idx < HOUGH_THETA_DIM; ++angle_idx)
         {
             for (size_t distance_idx = 0; distance_idx < HOUGH_RHO_DIM; ++distance_idx)
             {
-                // 提取4个批次的共同投票位（返回SLICEHOUGH_DOPPLER_BIT_NUM位的BitArray）
+                // 提取SLICEHOUGH_BATCH_NUM个批次的共同投票位
                 auto common_votes = peak_filter(angle_idx, distance_idx, cluster.vote_area);
 
                 // 如果没有共同投票，跳过
-                bool has_votes = false;
-                for (size_t i = 0; i < SLICEHOUGH_DOPPLER_BIT_NUM; ++i)
+                if (common_votes.none())
                 {
-                    if (common_votes.get_bit(i))
-                    {
-                        has_votes = true;
-                        break;
-                    }
-                }
-                if (!has_votes)
                     continue;
+                }
 
                 // 遍历所有速度位
                 for (size_t speed_bit = 0; speed_bit < SLICEHOUGH_DOPPLER_BIT_NUM; ++speed_bit)
                 {
                     if (common_votes.get_bit(speed_bit))
                     {
-                        double ratio = 0.0;
-
-                        // 根据布局计算ratio：
-                        // 低半区 (bits 0 到 SLICEHOUGH_DOPPLER_BIT_NUM/2 - 1)：负速度，从最大负(-1.0)到最小负
-                        // 高半区 (bits SLICEHOUGH_DOPPLER_BIT_NUM/2 到 SLICEHOUGH_DOPPLER_BIT_NUM-1)：正速度，从最小正到最大正(+1.0)
-
-                        constexpr size_t HALF_BITS = SLICEHOUGH_DOPPLER_BIT_NUM / 2;
-                        constexpr size_t MAX_LEVEL = HALF_BITS - 1;
-                        constexpr double SPEED_STEP = 1.0 / HALF_BITS; // 每级的速度增量
-
-                        if (speed_bit < HALF_BITS) // 负速度区域
-                        {
-                            // speed_bit = 0        → -1.0
-                            // speed_bit = MAX_LEVEL → -SPEED_STEP
-                            // 公式：从 -1.0 逐渐增加到接近0
-                            ratio = -1.0 + speed_bit * SPEED_STEP;
-                        }
-                        else // 正速度区域
-                        {
-                            // speed_bit = HALF_BITS       → +SPEED_STEP
-                            // speed_bit = SLICEHOUGH_DOPPLER_BIT_NUM-1 → +1.0
-                            size_t level = speed_bit - HALF_BITS;
-                            ratio = (level + 1) * SPEED_STEP; // +1 是为了跳过0
-                        }
-
-                        double doppler = ratio * track_project::velocity_max;
-
-                        // 计算theta和rho值
-                        double theta = angle_idx * SLICEHOUGH_THETA_RESOLUTION_DEG * M_PI / 180.0; // 弧度
-                        double rho = distance_idx * SLICEHOUGH_RHO_RESOLUTION_KM - 2 * SLICEHOUGH_CLUSTER_RADIUS_KM;
-
-                        // 保存检测到的直线参数
-                        detected_lines.push_back({theta, rho, doppler});
+                        // 直接按doppler索引分组存储(angle_idx, distance_idx)
+                        detected_lines_by_doppler[speed_bit].push_back({angle_idx, distance_idx});
                     }
                 }
             }
         }
 
-        return detected_lines;
+        return detected_lines_by_doppler;
     }
 
     // 提取目标区域峰值
@@ -438,7 +456,6 @@ namespace track_project::trackinit
         const auto &cell = vote_area[angle_idx][distance_idx];
 
         constexpr size_t BYTES_PER_BATCH = SLICEHOUGH_DOPPLER_BIT_NUM / 8;
-        constexpr size_t BATCH_NUM = HOUGH_VOTE_BIT_NUM / SLICEHOUGH_DOPPLER_BIT_NUM;
 
         // 分配两个缓冲区
         std::vector<uint8_t> buf1(BYTES_PER_BATCH);
@@ -452,7 +469,7 @@ namespace track_project::trackinit
         result.write_bytes(buf1.data(), 0, BYTES_PER_BATCH);
 
         // 依次处理后续批次
-        for (size_t batch = 1; batch < BATCH_NUM; ++batch)
+        for (size_t batch = 1; batch < SLICEHOUGH_BATCH_NUM; ++batch)
         {
             cell.read_bytes(buf2.data(), batch * BYTES_PER_BATCH, BYTES_PER_BATCH);
 
@@ -465,7 +482,125 @@ namespace track_project::trackinit
         return result;
     }
 
-    // 回溯点迹
+    std::vector<std::array<double, 3>> SliceHough::process_condense_detected_lines(
+        const std::vector<std::vector<std::array<size_t, 2>>> &detected_lines) const
+    {
+        std::vector<std::array<double, 3>> condensed_lines;
+
+        // 凝聚阈值（使用整数索引）
+        const size_t THETA_CLUSTER_TOL = 5; // 角度索引差≤1
+        const size_t RHO_CLUSTER_TOL = 2;   // 距离索引差≤2（主要扩散方向）
+
+        // 辅助函数：将doppler位索引转换为实际速度值
+        auto doppler_bit_to_velocity = [](size_t bit) -> double
+        {
+            constexpr size_t HALF_BITS = SLICEHOUGH_DOPPLER_BIT_NUM / 2;
+            constexpr double SPEED_STEP = 1.0 / HALF_BITS;
+
+            if (bit < HALF_BITS)
+            {
+                return (-1.0 + bit * SPEED_STEP) * track_project::velocity_max;
+            }
+            else
+            {
+                size_t level = bit - HALF_BITS;
+                return ((level + 1) * SPEED_STEP) * track_project::velocity_max;
+            }
+        };
+
+        // 辅助函数：将索引转换为实际值
+        auto idx_to_theta = [](size_t angle_idx) -> double
+        {
+            return angle_idx * SLICEHOUGH_THETA_RESOLUTION_DEG * M_PI / 180.0;
+        };
+
+        auto idx_to_rho = [](size_t distance_idx) -> double
+        {
+            return distance_idx * SLICEHOUGH_RHO_RESOLUTION_KM - 2 * SLICEHOUGH_CLUSTER_RADIUS_KM;
+        };
+
+        // 遍历每个多普勒速度组
+        for (size_t doppler_bit = 0; doppler_bit < detected_lines.size(); ++doppler_bit)
+        {
+            const auto &lines_at_doppler = detected_lines[doppler_bit];
+            if (lines_at_doppler.empty())
+                continue;
+
+            double doppler = doppler_bit_to_velocity(doppler_bit);
+
+            // 对同一多普勒速度下的(angle_idx, distance_idx)进行聚类
+            std::vector<bool> clustered(lines_at_doppler.size(), false);
+
+            for (size_t i = 0; i < lines_at_doppler.size(); ++i)
+            {
+                if (clustered[i])
+                    continue;
+
+                const auto &idx_i = lines_at_doppler[i];
+                size_t angle_i = idx_i[0];
+                size_t rho_i = idx_i[1];
+
+                // 找到所有属于同一聚类的点
+                std::vector<size_t> cluster_indices = {i};
+                clustered[i] = true;
+
+                for (size_t j = i + 1; j < lines_at_doppler.size(); ++j)
+                {
+                    if (clustered[j])
+                        continue;
+
+                    const auto &idx_j = lines_at_doppler[j];
+                    size_t angle_j = idx_j[0];
+                    size_t rho_j = idx_j[1];
+
+                    // 计算索引差（使用整数运算）
+                    size_t angle_diff = angle_i > angle_j ? angle_i - angle_j : angle_j - angle_i;
+                    // 角度索引需要考虑周期性,实际上m度和180-n度，当m和n非常小的时候任然是非常接近的，不能只看数值
+                    if (angle_diff > HOUGH_THETA_DIM / 2)
+                    {
+                        angle_diff = HOUGH_THETA_DIM - angle_diff;
+                    }
+                    size_t rho_diff = rho_i > rho_j ? rho_i - rho_j : rho_j - rho_i;
+
+                    if (angle_diff <= THETA_CLUSTER_TOL && rho_diff <= RHO_CLUSTER_TOL)
+                    {
+                        cluster_indices.push_back(j);
+                        clustered[j] = true;
+                    }
+                }
+
+                // 凝聚：取聚类中所有点的平均索引作为代表点
+                if (cluster_indices.size() > 1)
+                {
+                    size_t angle_sum = 0, rho_sum = 0;
+                    for (auto idx : cluster_indices)
+                    {
+                        angle_sum += lines_at_doppler[idx][0];
+                        rho_sum += lines_at_doppler[idx][1];
+                    }
+                    // 整数平均，四舍五入
+                    size_t angle_avg = (angle_sum + cluster_indices.size() / 2) / cluster_indices.size();
+                    size_t rho_avg = (rho_sum + cluster_indices.size() / 2) / cluster_indices.size();
+
+                    // 转换为实际值
+                    double theta = idx_to_theta(angle_avg);
+                    double rho = idx_to_rho(rho_avg);
+                    condensed_lines.push_back({theta, rho, doppler});
+                }
+                else
+                {
+                    // 单个点，直接转换
+                    double theta = idx_to_theta(angle_i);
+                    double rho = idx_to_rho(rho_i);
+                    condensed_lines.push_back({theta, rho, doppler});
+                }
+            }
+        }
+
+        return condensed_lines;
+    }
+
+    // 回溯点迹，只输出最新的4批次中符合条件的点迹，组成航迹（接口设定如此）
     void SliceHough::process_backtrack_points(const std::vector<std::array<double, 3>> &detected_lines, const Slice &cluster,
                                               std::vector<std::array<TrackPoint, 4>> &new_track)
     {
@@ -486,8 +621,8 @@ namespace track_project::trackinit
             std::array<TrackPoint, 4> track;
             bool valid = true;
 
-            // 检查4个批次
-            for (size_t batch = 0; batch < 4 && valid; ++batch)
+            // 对于SLICEHOUGH_BATCH_NUM批次数据，只检查最新的4个批次，依据多普勒速度和距离约束去寻找符合条件的点迹
+            for (size_t batch = SLICEHOUGH_BATCH_NUM - 4; batch < SLICEHOUGH_BATCH_NUM && valid; ++batch)
             {
                 const auto &points = cluster.point_list[batch];
                 bool found = false;
@@ -498,8 +633,7 @@ namespace track_project::trackinit
                     double rel_y = point.y - CENTER_Y;
                     double point_rho = rel_x * cos_theta + rel_y * sin_theta;
 
-                    if (std::abs(point_rho - rho) < RHO_TOL &&
-                        std::abs(point.doppler - doppler) < DOPPLER_TOL)
+                    if (std::abs(point_rho - rho) < RHO_TOL && std::abs(point.doppler - doppler) < DOPPLER_TOL)
                     {
                         track[batch] = point;
                         found = true;

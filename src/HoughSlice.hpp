@@ -6,6 +6,7 @@
  * 1、对于每个点迹聚集区域，创建霍夫变换切面，每个切面只处理该区域内的点迹
  * 2、对于时间序列点迹，不同时刻、不同多普勒速度的信息保留在不同位中，每批次数据占据16bits，分别表示是否存在对应的多普勒速度
  * 3、对于角度约束，使用doppler和最大速度进行约束，同时基于多普勒速度一致性去寻找点迹
+ * 4、“使用K批次点迹生成4个航迹”，其中K可以利用def_init头文件中的SLICEHOUGH_BATCH_NUM修改，
  *时间复杂度    分析：
  * 聚类生成：O(N)
 
@@ -45,9 +46,9 @@ namespace track_project::trackinit
 
         struct Slice // 单个切面的内容，雷达站位于x=0,y=0处，坐标单位为km，霍夫变换的角度是东偏北（标准极坐标，不要和cog搞混）
         {
-            int current_batch_index;                           // 当前批次索引，从0开始
-            std::array<std::vector<TrackPoint>, 4> point_list; // 历史点迹检索
-            double center_x, center_y;                         // 聚类中心点坐标
+            int current_batch_index;                                              // 当前批次索引，从0开始
+            std::array<std::vector<TrackPoint>, SLICEHOUGH_BATCH_NUM> point_list; // 历史点迹检索
+            double center_x, center_y;                                            // 聚类中心点坐标
             // 角度索引依据北偏东做分割，正北索引为0，是射线而非直线；截距索引依据负到正做分割，0点为 -2R，2R点为 +2R
             std::array<std::array<BitArray<HOUGH_VOTE_BIT_NUM>, HOUGH_RHO_DIM>, HOUGH_THETA_DIM> vote_area;
 
@@ -130,12 +131,21 @@ namespace track_project::trackinit
                                  std::array<std::array<BitArray<HOUGH_VOTE_BIT_NUM>, HOUGH_RHO_DIM>, HOUGH_THETA_DIM> &vote_area);
 
         /*****************************************************************************
-         * @brief 从霍夫变换空间中提取峰值，返回检测到的直线参数列表
+         * @brief 从霍夫变换空间中提取峰值，返回按多普勒速度分组的检测直线参数
          *
          * @param cluster 单个霍夫变换切面
-         * @return std::vector<std::array<double, 3>> 检测到的直线参数列表，每个元素为(theta, rho, doppler)
+         * @return std::vector<std::vector<std::array<size_t, 2>>>
+         *         返回值是一个二维向量：
+         *         - 第一维索引对应多普勒速度位 (0 ~ SLICEHOUGH_DOPPLER_BIT_NUM-1)
+         *         - 第二维是该多普勒速度下的所有检测直线，每个元素为(theta, rho)的索引对
+         *
+         * @note 多普勒速度位的具体含义：
+         *       - 低半区 (0 ~ SLICEHOUGH_DOPPLER_BIT_NUM/2 - 1): 负速度，从最大负到最小负
+         *       - 高半区 (SLICEHOUGH_DOPPLER_BIT_NUM/2 ~ SLICEHOUGH_DOPPLER_BIT_NUM-1): 正速度，从最小正到最大正
+         *
+         * @version 0.2 修改返回值类型，将多普勒维度提取到外层索引，便于后续按速度分组处理
          *****************************************************************************/
-        std::vector<std::array<double, 3>> process_extract_peak_from_hough_space(Slice &cluster) const;
+        std::vector<std::vector<std::array<size_t, 2>>> process_extract_peak_from_hough_space(Slice &cluster) const;
 
         /*****************************************************************************
          * @brief 峰值过滤器，从霍夫变换空间中检测峰值，并推算峰值数量
@@ -151,9 +161,19 @@ namespace track_project::trackinit
             const std::array<std::array<BitArray<HOUGH_VOTE_BIT_NUM>, HOUGH_RHO_DIM>, HOUGH_THETA_DIM> &vote_area) const;
 
         /*****************************************************************************
+         * @brief 点迹凝聚，对霍夫空间中的点迹拥簇问题，进行适当的凝聚（主要是RHO上的），减少重复航迹生成
+         *
+         * @param detected_lines 按多普勒速度分组的检测直线参数
+         *                       第一维：多普勒速度位索引
+         *                       第二维：该速度下的(theta, rho)参数对列表
+         * @return std::vector<std::array<double, 3>> 凝聚后的直线参数列表 (theta, rho, doppler)
+         *****************************************************************************/
+        std::vector<std::array<double, 3>> process_condense_detected_lines(const std::vector<std::vector<std::array<size_t, 2>>> &detected_lines) const;
+
+        /*****************************************************************************
          * @brief 回溯点迹，依据检测到的直线参数，从聚类中提取符合条件的点迹，组成航迹
          *
-         * @param detected_lines 检测到的直线参数列表
+         * @param detected_lines 检测到的直线参数列表，分别是(theta, rho, doppler)
          * @param cluster 单个霍夫变换切面
          * @param new_track 输出航迹列表
          *****************************************************************************/

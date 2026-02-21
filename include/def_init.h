@@ -10,9 +10,9 @@ namespace track_project::trackinit
     constexpr int SLICEHOUGH_MIN_POINTS_PER_CORE = 3;       // 每个核心点最少需要拥有的点迹数量
     // ============ SLICEHOUGH 霍夫变换参数 ============
     constexpr double SLICEHOUGH_THETA_RESOLUTION_DEG = 1.0; // 霍夫角度分辨率（度）,得是180的公因数
-    constexpr double SLICEHOUGH_RHO_RESOLUTION_KM = 0.05;   // 霍夫距离分辨率（公里）
+    constexpr double SLICEHOUGH_RHO_RESOLUTION_KM = 0.1;   // 霍夫距离分辨率（公里）
     constexpr size_t SLICEHOUGH_DOPPLER_BIT_NUM = 64;       // 霍夫变换中多普勒速度位数，必须是32的整数倍
-    constexpr size_t SLICEHOUGH_BATCH_NUM = 4;              // 批次数量，必须是大于4
+    constexpr size_t SLICEHOUGH_BATCH_NUM = 4;              // 批次数量，必须大于4,不然不能回溯四批次数据
 
     /*****************************************************************************
      * @brief 状态码

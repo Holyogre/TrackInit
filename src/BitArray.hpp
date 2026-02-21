@@ -87,7 +87,6 @@ namespace track_project::trackinit
             write_bytes(buffer.data(), byte_offset, num_bytes);
         }
 
-
         // 逻辑左移
         BitArray &operator<<=(size_t shift)
         {
@@ -170,6 +169,16 @@ namespace track_project::trackinit
         void clear()
         {
             data.fill(0);
+        }
+
+        bool none() const
+        {
+            for (size_t i = 0; i < SLICEHOUGH_DOPPLER_BIT_NUM; ++i)
+            {
+                if (get_bit(i))
+                    return false;
+            }
+            return true;
         }
 
         // 写入单个字节到指定位置
