@@ -150,7 +150,7 @@ namespace track_project::trackinit
 
 #endif
 
-            // ==================== STEP5: 航迹生成 ====================
+            // ==================== STEP5: 点迹回溯 ====================
             // STEP5不需要DEBUG日志，可以从显控查看结果
             process_backtrack_points(condensed_lines, *it_clust, new_track);
         }
@@ -488,8 +488,8 @@ namespace track_project::trackinit
         std::vector<std::array<double, 3>> condensed_lines;
 
         // 凝聚阈值（使用整数索引）
-        const size_t THETA_CLUSTER_TOL = 5; // 角度索引差≤1
-        const size_t RHO_CLUSTER_TOL = 2;   // 距离索引差≤2（主要扩散方向）
+        const size_t THETA_CLUSTER_TOL = 4; // 角度索引差
+        const size_t RHO_CLUSTER_TOL = 1;   // 距离索引差
 
         // 辅助函数：将doppler位索引转换为实际速度值
         auto doppler_bit_to_velocity = [](size_t bit) -> double
@@ -605,7 +605,7 @@ namespace track_project::trackinit
                                               std::vector<std::array<TrackPoint, 4>> &new_track)
     {
         const double RHO_TOL = SLICEHOUGH_RHO_RESOLUTION_KM / 2.0;
-        const double DOPPLER_TOL = 1.0;
+        const double DOPPLER_TOL = 2 * velocity_max / SLICEHOUGH_DOPPLER_BIT_NUM; // 速度分辨率的一半
         const double CENTER_X = cluster.center_x;
         const double CENTER_Y = cluster.center_y;
 

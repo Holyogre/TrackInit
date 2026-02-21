@@ -45,8 +45,8 @@ TEST_CASE("功能测试", "[FunctionalityCheck]")
     // 生成高斯分布的10个点迹
     auto points = generate_gaussian_points(1, 0,
                                            0, SLICEHOUGH_CLUSTER_RADIUS_KM / 4,
-                                           25, SLICEHOUGH_CLUSTER_RADIUS_KM / 4,
-                                           10.0, 5.0,
+                                           0, SLICEHOUGH_CLUSTER_RADIUS_KM / 4,
+                                           100.0, 50.0,
                                            seed);
     std::vector<std::array<TrackPoint, 4>> new_tracks;
 
