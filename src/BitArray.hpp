@@ -173,7 +173,7 @@ namespace track_project::trackinit
 
         bool none() const
         {
-            for (size_t i = 0; i < SLICEHOUGH_DOPPLER_BIT_NUM; ++i)
+            for (size_t i = 0; i < NumBits; ++i)
             {
                 if (get_bit(i))
                     return false;
