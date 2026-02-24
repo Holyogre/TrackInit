@@ -488,8 +488,8 @@ namespace track_project::trackinit
         std::vector<std::array<double, 3>> condensed_lines;
 
         // 凝聚阈值（使用整数索引）
-        const size_t THETA_CLUSTER_TOL = 4; // 角度索引差
-        const size_t RHO_CLUSTER_TOL = 1;   // 距离索引差
+        const size_t THETA_CLUSTER_TOL = SLICEHOUGH_THETA_CLUSTER_TOL_DEG/SLICEHOUGH_THETA_RESOLUTION_DEG; // 角度索引差
+        const size_t RHO_CLUSTER_TOL = SLICEHOUGH_RHO_CLUSTER_TOL_KM/SLICEHOUGH_RHO_RESOLUTION_KM;   // 距离索引差
 
         // 辅助函数：将doppler位索引转换为实际速度值
         auto doppler_bit_to_velocity = [](size_t bit) -> double
@@ -604,7 +604,6 @@ namespace track_project::trackinit
     void SliceHough::process_backtrack_points(const std::vector<std::array<double, 3>> &detected_lines, const Slice &cluster,
                                               std::vector<std::array<TrackPoint, 4>> &new_track)
     {
-        const double RHO_TOL = SLICEHOUGH_RHO_RESOLUTION_KM / 2.0;
         const double DOPPLER_TOL = 2 * velocity_max / SLICEHOUGH_DOPPLER_BIT_NUM; // 速度分辨率的一半
         const double CENTER_X = cluster.center_x;
         const double CENTER_Y = cluster.center_y;
@@ -633,7 +632,7 @@ namespace track_project::trackinit
                     double rel_y = point.y - CENTER_Y;
                     double point_rho = rel_x * cos_theta + rel_y * sin_theta;
 
-                    if (std::abs(point_rho - rho) < RHO_TOL && std::abs(point.doppler - doppler) < DOPPLER_TOL)
+                    if (std::abs(point_rho - rho) < SLICEHOUGH_RHO_CLUSTER_TOL_KM && std::abs(point.doppler - doppler) < DOPPLER_TOL)
                     {
                         track[batch] = point;
                         found = true;
