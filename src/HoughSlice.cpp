@@ -288,6 +288,8 @@ namespace track_project::trackinit
             int64_t t_end = it_clust.point_list[HOUGHSLICE_BATCH_NUM - 1][0].time.milliseconds;
             double dt = static_cast<double>(t_end - t_start) / 1000.0 / (HOUGHSLICE_BATCH_NUM - 1); // 转换为秒
 
+            dt = 0;
+
             if (dt > 0)
             {
                 // 计算点迹到雷达的距离（km转m）
@@ -305,6 +307,7 @@ namespace track_project::trackinit
                 // 转换为位数：doppler_tolerance_bits = round((Δv / velocity_max) * DOPPLER_BIT_NUM)
                 doppler_tolerance_bits = static_cast<int>(std::round((delta_v / track_project::velocity_max) * HOUGHSLICE_DOPPLER_BIT_NUM));
                 doppler_tolerance_bits = std::clamp(doppler_tolerance_bits, 0, static_cast<int>(HOUGHSLICE_DOPPLER_BIT_NUM) - 1);
+
             }
         }
 
@@ -679,7 +682,10 @@ namespace track_project::trackinit
                 }
 
                 if (!found)
+                {
                     valid = false;
+                    break;
+                }
             }
 
             if (valid)
