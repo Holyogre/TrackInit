@@ -10,7 +10,7 @@
 namespace track_project::trackinit
 {
     // 主程序
-    ProcessStatus HoughSlice::process(const std::vector<TrackPoint> &points, std::vector<std::array<TrackPoint, 4>> &new_track)
+    ProcessStatus SliceHough::process(const std::vector<TrackPoint> &points, std::vector<std::array<TrackPoint, 4>> &new_track)
     {
         // 清空输出航迹
         new_track.clear();
@@ -24,7 +24,7 @@ namespace track_project::trackinit
         for (auto &clust : ClustArea.get_allocated_ptrs())
         {
             LOG_DEBUG << "当前聚类中心：(" << clust->center_x << "," << clust->center_y << ")，共" << clust->current_batch_index << "批次：";
-            for (int batch = 0; batch < HOUGHSLICE_BATCH_NUM; ++batch)
+            for (int batch = 0; batch < SLICEHOUGH_BATCH_NUM; ++batch)
             {
                 LOG_DEBUG << "第" << batch + 1 << "批次点迹数量：" << clust->point_list[batch].size();
             }
@@ -35,13 +35,13 @@ namespace track_project::trackinit
         std::vector<Slice *> clustAera_list = ClustArea.get_allocated_ptrs();
         for (auto &it_clust : clustAera_list)
         {
-            if (it_clust->current_batch_index != HOUGHSLICE_BATCH_NUM - 1)
+            if (it_clust->current_batch_index != SLICEHOUGH_BATCH_NUM - 1)
             {
                 LOG_DEBUG << "聚类(" << it_clust->center_x << "," << it_clust->center_y << "): 批次数不足，跳过投票";
                 continue; // 批次数不足，跳过
             }
 
-            for (size_t batch = 0; batch < HOUGHSLICE_BATCH_NUM; ++batch)
+            for (size_t batch = 0; batch < SLICEHOUGH_BATCH_NUM; ++batch)
             {
                 for (const auto &point : it_clust->point_list[batch]) // 对于每个点执行霍夫变换投票
                 {
@@ -77,8 +77,8 @@ namespace track_project::trackinit
                 {
                     for (size_t rho = 0; rho < HOUGH_RHO_DIM; ++rho)
                     {
-                        BitArray<HOUGHSLICE_DOPPLER_BIT_NUM * HOUGHSLICE_BATCH_NUM> votes = it_clust->vote_area[theta][rho];
-                        file.write(reinterpret_cast<const char *>(&votes), HOUGHSLICE_DOPPLER_BIT_NUM * HOUGHSLICE_BATCH_NUM / 8);
+                        BitArray<256> votes = it_clust->vote_area[theta][rho];
+                        file.write(reinterpret_cast<const char *>(&votes), sizeof(BitArray<256>));
                     }
                 }
 
@@ -91,7 +91,7 @@ namespace track_project::trackinit
         // ========================================STEP3~5:峰值检测、点迹凝聚、航迹生成========================================
         for (auto &it_clust : clustAera_list)
         {
-            if (it_clust->current_batch_index != HOUGHSLICE_BATCH_NUM - 1)
+            if (it_clust->current_batch_index != SLICEHOUGH_BATCH_NUM - 1)
             {
                 LOG_DEBUG << "聚类(" << it_clust->center_x << "," << it_clust->center_y << "): 批次数不足，跳过峰值检测";
                 continue; // 批次数不足，跳过
@@ -162,7 +162,7 @@ namespace track_project::trackinit
         // 删除已经执行过航迹生成的霍夫变换切片
         for (auto &it_clust : clustAera_list)
         {
-            if (it_clust->current_batch_index == HOUGHSLICE_BATCH_NUM - 1)
+            if (it_clust->current_batch_index == SLICEHOUGH_BATCH_NUM - 1)
             {
                 ClustArea.release_target(it_clust);
             }
@@ -172,7 +172,7 @@ namespace track_project::trackinit
     }
 
     // 先剔除在聚类中心的点，再剔除离群点，最后对剩余点进行聚类
-    void HoughSlice::process_cluster_generation(const std::vector<TrackPoint> &points)
+    void SliceHough::process_cluster_generation(const std::vector<TrackPoint> &points)
     {
         // 用于记录当前点迹是否被聚类
         std::vector<bool> visited(points.size(), false);
@@ -189,7 +189,7 @@ namespace track_project::trackinit
                 const double dx = it_point->x - it_clust->center_x;
                 const double dy = it_point->y - it_clust->center_y;
                 const double dist_square = dx * dx + dy * dy;
-                if (dist_square <= HOUGHSLICE_CLUSTER_RADIUS_KM * HOUGHSLICE_CLUSTER_RADIUS_KM)
+                if (dist_square <= SLICEHOUGH_CLUSTER_RADIUS_KM * SLICEHOUGH_CLUSTER_RADIUS_KM)
                 {
                     // 点迹在聚类范围内，加入该聚类
                     size_t batch = it_clust->current_batch_index; // 当前批次数据存放位置
@@ -217,7 +217,7 @@ namespace track_project::trackinit
         }
 
         // 新聚类
-        std::vector<std::vector<size_t>> _clust = dbscan(unvisited_points, HOUGHSLICE_CORE_POINT_RADIUS_KM, 2);
+        std::vector<std::vector<size_t>> _clust = dbscan(unvisited_points, SLICEHOUGH_CORE_POINT_RADIUS_KM, 2);
 
         // 计算相关参数，申请新的聚类空间
         for (const auto &cluster : _clust)
@@ -254,7 +254,7 @@ namespace track_project::trackinit
     }
 
     // 对于单个点迹进行处理，在霍夫空间中进行投票,减少计算量，内部使用极坐标
-    void HoughSlice::process_point_for_hough_vote(size_t batch, const TrackPoint &point, Slice &it_clust)
+    void SliceHough::process_point_for_hough_vote(size_t batch, const TrackPoint &point, Slice &it_clust)
     {
         // 雷达站位于0,0位置
         double rel_x = point.x - it_clust.center_x;
@@ -265,35 +265,6 @@ namespace track_project::trackinit
         if (speed > track_project::velocity_max)
         {
             return; // 速度超过最大值，跳过该点迹
-        }
-
-        // ==================== 计算 doppler_tolerance_bits ====================
-        // 计算时间间隔 dt（秒）：使用 point_list 的第一个和最后一个批次的时间戳
-        int doppler_tolerance_bits = 0;
-        if (!it_clust.point_list[0].empty() && !it_clust.point_list[HOUGHSLICE_BATCH_NUM - 1].empty())
-        {
-            int64_t t_start = it_clust.point_list[0][0].time.milliseconds;
-            int64_t t_end = it_clust.point_list[HOUGHSLICE_BATCH_NUM - 1][0].time.milliseconds;
-            double dt = static_cast<double>(t_end - t_start) / 1000.0 / (HOUGHSLICE_BATCH_NUM - 1); // 转换为秒
-
-            if (dt > 0)
-            {
-                // 计算点迹到雷达的距离（km转m）
-                double distance_m = std::sqrt(point.x * point.x + point.y * point.y) * 1000.0;
-
-                // 计算航迹在 (BATCH_NUM-1) 个时间间隔内可能移动的最大距离
-                double max_displacement = track_project::velocity_max * dt * (HOUGHSLICE_BATCH_NUM - 1);
-
-                // 计算视线角变化 α = arctan(max_displacement / distance)
-                double alpha = std::atan2(max_displacement, distance_m);
-
-                // 计算多普勒速度的极限变化量 Δv = max_velocity * (1 - cos(α))
-                double delta_v = track_project::velocity_max * (1.0 - std::cos(alpha));
-
-                // 转换为位数：doppler_tolerance_bits = round((Δv / velocity_max) * DOPPLER_BIT_NUM)
-                doppler_tolerance_bits = static_cast<int>(std::round((delta_v / track_project::velocity_max) * HOUGHSLICE_DOPPLER_BIT_NUM));
-                doppler_tolerance_bits = std::clamp(doppler_tolerance_bits, 0, static_cast<int>(HOUGHSLICE_DOPPLER_BIT_NUM) - 1);
-            }
         }
 
         // 计算基准航向，依据doppler的正负确定是朝向还是背向，为极坐标表示方法，便于调用math库函数计算
@@ -331,8 +302,8 @@ namespace track_project::trackinit
             heading4 = M_PI;
             heading1 = 0.0;
             heading2 = heading2;
-            vote_in_hough_space(heading1, heading2, point.doppler, rel_x, rel_y, batch, doppler_tolerance_bits, it_clust.vote_area);
-            vote_in_hough_space(heading3, heading4, point.doppler, rel_x, rel_y, batch, doppler_tolerance_bits, it_clust.vote_area);
+            vote_in_hough_space(heading1, heading2, rel_x, rel_y, batch, point.doppler, it_clust.vote_area);
+            vote_in_hough_space(heading3, heading4, rel_x, rel_y, batch, point.doppler, it_clust.vote_area);
         }
         else if (heading2 > 2 * M_PI) // 仅有可能heading2大于2π
         {
@@ -342,40 +313,39 @@ namespace track_project::trackinit
             heading4 = M_PI;
             heading1 = 0.0;
             heading2 = heading2 - 2 * M_PI;
-            vote_in_hough_space(heading1, heading2, point.doppler, rel_x, rel_y, batch, doppler_tolerance_bits, it_clust.vote_area);
-            vote_in_hough_space(heading3, heading4, point.doppler, rel_x, rel_y, batch, doppler_tolerance_bits, it_clust.vote_area);
+            vote_in_hough_space(heading1, heading2, point.doppler, rel_x, rel_y, batch, it_clust.vote_area);
+            vote_in_hough_space(heading3, heading4, point.doppler, rel_x, rel_y, batch, it_clust.vote_area);
         }
         else
         {
-            vote_in_hough_space(heading1, heading2, point.doppler, rel_x, rel_y, batch, doppler_tolerance_bits, it_clust.vote_area);
+            vote_in_hough_space(heading1, heading2, point.doppler, rel_x, rel_y, batch, it_clust.vote_area);
         }
     }
 
     // 对于霍夫变换空间中的指定区间进行特殊投票
-    void HoughSlice::vote_in_hough_space(const double heading_start, const double heading_end, const double doppler,
+    void SliceHough::vote_in_hough_space(const double heading_start, const double heading_end, const double doppler,
                                          const double rel_x, const double rel_y, const size_t batch,
-                                         const int doppler_tolerance_bits,
                                          std::array<std::array<BitArray<HOUGH_VOTE_BIT_NUM>, HOUGH_RHO_DIM>, HOUGH_THETA_DIM> &vote_area)
     {
         // 计算起始和结束的角度索引
-        std::uint32_t angle_idx_start = static_cast<std::uint32_t>(heading_start * 180.0 / M_PI / HOUGHSLICE_THETA_RESOLUTION_DEG);
-        std::uint32_t angle_idx_end = static_cast<std::uint32_t>(heading_end * 180.0 / M_PI / HOUGHSLICE_THETA_RESOLUTION_DEG);
+        std::uint32_t angle_idx_start = static_cast<std::uint32_t>(heading_start * 180.0 / M_PI / SLICEHOUGH_THETA_RESOLUTION_DEG);
+        std::uint32_t angle_idx_end = static_cast<std::uint32_t>(heading_end * 180.0 / M_PI / SLICEHOUGH_THETA_RESOLUTION_DEG);
 
         // 计算速度索引 - 由宏控制位数
         double ratio = doppler / track_project::velocity_max;
         ratio = std::clamp(ratio, -1.0, 1.0);
 
-        // 根据HOUGHSLICE_DOPPLER_BIT_NUM计算每侧级别数
-        constexpr size_t LEVELS_PER_SIDE = HOUGHSLICE_DOPPLER_BIT_NUM / 2; // 正负各一半
-        constexpr size_t BYTES_PER_BATCH = HOUGHSLICE_DOPPLER_BIT_NUM / 8; // 每批次的字节数
+        // 根据SLICEHOUGH_DOPPLER_BIT_NUM计算每侧级别数
+        constexpr size_t LEVELS_PER_SIDE = SLICEHOUGH_DOPPLER_BIT_NUM / 2; // 正负各一半
+        constexpr size_t BYTES_PER_BATCH = SLICEHOUGH_DOPPLER_BIT_NUM / 8; // 每批次的字节数
 
         // 创建掩码缓冲区（按字节存储，小端序）
         std::vector<uint8_t> mask_bytes(BYTES_PER_BATCH, 0);
 
         // 构造一个批次的速度位的存储布局（连续均匀分布）：
-        // 低半区 (bits 0 到 HOUGHSLICE_DOPPLER_BIT_NUM/2 - 1)：存储负速度（从最大负到最小负）
+        // 低半区 (bits 0 到 SLICEHOUGH_DOPPLER_BIT_NUM/2 - 1)：存储负速度（从最大负到最小负）
         //    [bit0: 最大负速度 (-1.0), bit1: 次大负速度 (-0.9), ..., bit31: 最小负速度 (-0.1)]
-        // 高半区 (bits HOUGHSLICE_DOPPLER_BIT_NUM/2 到 HOUGHSLICE_DOPPLER_BIT_NUM-1)：存储正速度（从最小正到最大正）
+        // 高半区 (bits SLICEHOUGH_DOPPLER_BIT_NUM/2 到 SLICEHOUGH_DOPPLER_BIT_NUM-1)：存储正速度（从最小正到最大正）
         //    [bit32: 最小正速度 (+0.1), bit33: 次小正速度 (+0.2), ..., bit63: 最大正速度 (+1.0)]
         //
         // 这样整个速度范围是连续的：-1.0, -0.9, ..., -0.1, +0.1, +0.2, ..., +1.0
@@ -384,31 +354,35 @@ namespace track_project::trackinit
         {
             return;
         }
-
-        // 计算中心位位置
-        int center_bit_pos = 0;
-        if (ratio < 0)
+        else if (ratio < 0)
         {
-            // 负数：使用低半区 (bits 0 到 HOUGHSLICE_DOPPLER_BIT_NUM/2 - 1)
+            // 负数：使用低半区 (bits 0 到 SLICEHOUGH_DOPPLER_BIT_NUM/2 - 1)
             double abs_ratio = -ratio; // 0.0 ~ 1.0
             int level = static_cast<int>(std::floor(abs_ratio * LEVELS_PER_SIDE));
             level = std::clamp(level, 0, static_cast<int>(LEVELS_PER_SIDE) - 1);
-            center_bit_pos = level;
+
+            // 负速度：从最大负（bit0）到最小负（bit31）
+            // level=0 (|速度|最大, -1.0) → bit_pos=0
+            // level=31 (|速度|最小, -0.1) → bit_pos=31
+            int bit_pos = level; // 注意：这里直接用level，因为负速度在低半区
+
+            // 设置对应位
+            size_t byte_idx = bit_pos / 8;
+            size_t bit_in_byte = bit_pos % 8;
+            mask_bytes[byte_idx] |= (1 << bit_in_byte);
         }
-        else // ratio > 0
+        else if (ratio > 0)
         {
-            // 正数：使用高半区 (bits HOUGHSLICE_DOPPLER_BIT_NUM/2 到 HOUGHSLICE_DOPPLER_BIT_NUM-1)
+            // 正数：使用高半区 (bits SLICEHOUGH_DOPPLER_BIT_NUM/2 到 SLICEHOUGH_DOPPLER_BIT_NUM-1)
             int level = static_cast<int>(std::floor(ratio * LEVELS_PER_SIDE));
             level = std::clamp(level, 0, static_cast<int>(LEVELS_PER_SIDE) - 1);
-            center_bit_pos = HOUGHSLICE_DOPPLER_BIT_NUM / 2 + level;
-        }
 
-        // 设置中心位及其相邻的 ±doppler_tolerance_bits 范围内的位
-        int bit_start = std::max(0, center_bit_pos - doppler_tolerance_bits);
-        int bit_end = std::min(static_cast<int>(HOUGHSLICE_DOPPLER_BIT_NUM) - 1, center_bit_pos + doppler_tolerance_bits);
+            // 正速度：从最小正（bit32）到最大正（bit63）
+            // level=0 (+0.1) → bit_pos=32
+            // level=31 (+1.0) → bit_pos=63
+            int bit_pos = SLICEHOUGH_DOPPLER_BIT_NUM / 2 + level;
 
-        for (int bit_pos = bit_start; bit_pos <= bit_end; ++bit_pos)
-        {
+            // 设置对应位
             size_t byte_idx = bit_pos / 8;
             size_t bit_in_byte = bit_pos % 8;
             mask_bytes[byte_idx] |= (1 << bit_in_byte);
@@ -417,11 +391,11 @@ namespace track_project::trackinit
         // 遍历所有角度索引进行投票
         for (std::uint32_t angle_idx = angle_idx_start; angle_idx < angle_idx_end; ++angle_idx)
         {
-            double theta = angle_idx * HOUGHSLICE_THETA_RESOLUTION_DEG * M_PI / 180.0;
+            double theta = angle_idx * SLICEHOUGH_THETA_RESOLUTION_DEG * M_PI / 180.0;
             double distance = rel_x * std::cos(theta) + rel_y * std::sin(theta);
 
             // 计算距离索引
-            int distance_idx = static_cast<int>((distance + 2 * HOUGHSLICE_CLUSTER_RADIUS_KM) / HOUGHSLICE_RHO_RESOLUTION_KM);
+            int distance_idx = static_cast<int>((distance + 2 * SLICEHOUGH_CLUSTER_RADIUS_KM) / SLICEHOUGH_RHO_RESOLUTION_KM);
             if (distance_idx < 0 || distance_idx >= static_cast<int>(HOUGH_RHO_DIM))
             {
                 continue;
@@ -441,16 +415,16 @@ namespace track_project::trackinit
     }
 
     // 峰值检测,从霍夫变换空间中提取检测到的直线参数列表
-    std::vector<std::vector<std::array<size_t, 2>>> HoughSlice::process_extract_peak_from_hough_space(Slice &cluster) const
+    std::vector<std::vector<std::array<size_t, 2>>> SliceHough::process_extract_peak_from_hough_space(Slice &cluster) const
     {
         // 外层vector按doppler索引分组，内层vector存储该doppler下的(angle_idx, distance_idx)索引对
-        std::vector<std::vector<std::array<size_t, 2>>> detected_lines_by_doppler(HOUGHSLICE_DOPPLER_BIT_NUM);
+        std::vector<std::vector<std::array<size_t, 2>>> detected_lines_by_doppler(SLICEHOUGH_DOPPLER_BIT_NUM);
 
         for (size_t angle_idx = 0; angle_idx < HOUGH_THETA_DIM; ++angle_idx)
         {
             for (size_t distance_idx = 0; distance_idx < HOUGH_RHO_DIM; ++distance_idx)
             {
-                // 提取HOUGHSLICE_BATCH_NUM个批次的共同投票位
+                // 提取SLICEHOUGH_BATCH_NUM个批次的共同投票位
                 auto common_votes = peak_filter(angle_idx, distance_idx, cluster.vote_area);
 
                 // 如果没有共同投票，跳过
@@ -460,7 +434,7 @@ namespace track_project::trackinit
                 }
 
                 // 遍历所有速度位
-                for (size_t speed_bit = 0; speed_bit < HOUGHSLICE_DOPPLER_BIT_NUM; ++speed_bit)
+                for (size_t speed_bit = 0; speed_bit < SLICEHOUGH_DOPPLER_BIT_NUM; ++speed_bit)
                 {
                     if (common_votes.get_bit(speed_bit))
                     {
@@ -475,13 +449,13 @@ namespace track_project::trackinit
     }
 
     // 提取目标区域峰值
-    BitArray<HOUGHSLICE_DOPPLER_BIT_NUM> HoughSlice::peak_filter(
+    BitArray<SLICEHOUGH_DOPPLER_BIT_NUM> SliceHough::peak_filter(
         const size_t angle_idx, const size_t distance_idx,
         const std::array<std::array<BitArray<HOUGH_VOTE_BIT_NUM>, HOUGH_RHO_DIM>, HOUGH_THETA_DIM> &vote_area) const
     {
         const auto &cell = vote_area[angle_idx][distance_idx];
 
-        constexpr size_t BYTES_PER_BATCH = HOUGHSLICE_DOPPLER_BIT_NUM / 8;
+        constexpr size_t BYTES_PER_BATCH = SLICEHOUGH_DOPPLER_BIT_NUM / 8;
 
         // 分配两个缓冲区
         std::vector<uint8_t> buf1(BYTES_PER_BATCH);
@@ -491,15 +465,15 @@ namespace track_project::trackinit
         cell.read_bytes(buf1.data(), 0, BYTES_PER_BATCH);
 
         // 创建结果对象并写入
-        BitArray<HOUGHSLICE_DOPPLER_BIT_NUM> result;
+        BitArray<SLICEHOUGH_DOPPLER_BIT_NUM> result;
         result.write_bytes(buf1.data(), 0, BYTES_PER_BATCH);
 
         // 依次处理后续批次
-        for (size_t batch = 1; batch < HOUGHSLICE_BATCH_NUM; ++batch)
+        for (size_t batch = 1; batch < SLICEHOUGH_BATCH_NUM; ++batch)
         {
             cell.read_bytes(buf2.data(), batch * BYTES_PER_BATCH, BYTES_PER_BATCH);
 
-            BitArray<HOUGHSLICE_DOPPLER_BIT_NUM> current;
+            BitArray<SLICEHOUGH_DOPPLER_BIT_NUM> current;
             current.write_bytes(buf2.data(), 0, BYTES_PER_BATCH);
 
             result &= current;
@@ -508,19 +482,19 @@ namespace track_project::trackinit
         return result;
     }
 
-    std::vector<std::array<double, 3>> HoughSlice::process_condense_detected_lines(
+    std::vector<std::array<double, 3>> SliceHough::process_condense_detected_lines(
         const std::vector<std::vector<std::array<size_t, 2>>> &detected_lines) const
     {
         std::vector<std::array<double, 3>> condensed_lines;
 
         // 凝聚阈值（使用整数索引）
-        const size_t THETA_CLUSTER_TOL = HOUGHSLICE_THETA_CLUSTER_TOL_DEG / HOUGHSLICE_THETA_RESOLUTION_DEG; // 角度索引差
-        const size_t RHO_CLUSTER_TOL = HOUGHSLICE_RHO_CLUSTER_TOL_KM / HOUGHSLICE_RHO_RESOLUTION_KM;         // 距离索引差
+        const size_t THETA_CLUSTER_TOL = SLICEHOUGH_THETA_CLUSTER_TOL_DEG/SLICEHOUGH_THETA_RESOLUTION_DEG; // 角度索引差
+        const size_t RHO_CLUSTER_TOL = SLICEHOUGH_RHO_CLUSTER_TOL_KM/SLICEHOUGH_RHO_RESOLUTION_KM;   // 距离索引差
 
         // 辅助函数：将doppler位索引转换为实际速度值
         auto doppler_bit_to_velocity = [](size_t bit) -> double
         {
-            constexpr size_t HALF_BITS = HOUGHSLICE_DOPPLER_BIT_NUM / 2;
+            constexpr size_t HALF_BITS = SLICEHOUGH_DOPPLER_BIT_NUM / 2;
             constexpr double SPEED_STEP = 1.0 / HALF_BITS;
 
             if (bit < HALF_BITS)
@@ -537,12 +511,12 @@ namespace track_project::trackinit
         // 辅助函数：将索引转换为实际值
         auto idx_to_theta = [](size_t angle_idx) -> double
         {
-            return angle_idx * HOUGHSLICE_THETA_RESOLUTION_DEG * M_PI / 180.0;
+            return angle_idx * SLICEHOUGH_THETA_RESOLUTION_DEG * M_PI / 180.0;
         };
 
         auto idx_to_rho = [](size_t distance_idx) -> double
         {
-            return distance_idx * HOUGHSLICE_RHO_RESOLUTION_KM - 2 * HOUGHSLICE_CLUSTER_RADIUS_KM;
+            return distance_idx * SLICEHOUGH_RHO_RESOLUTION_KM - 2 * SLICEHOUGH_CLUSTER_RADIUS_KM;
         };
 
         // 遍历每个多普勒速度组
@@ -627,10 +601,10 @@ namespace track_project::trackinit
     }
 
     // 回溯点迹，只输出最新的4批次中符合条件的点迹，组成航迹（接口设定如此）
-    void HoughSlice::process_backtrack_points(const std::vector<std::array<double, 3>> &detected_lines, const Slice &cluster,
+    void SliceHough::process_backtrack_points(const std::vector<std::array<double, 3>> &detected_lines, const Slice &cluster,
                                               std::vector<std::array<TrackPoint, 4>> &new_track)
     {
-        const double DOPPLER_TOL = 3 * track_project::velocity_max / HOUGHSLICE_DOPPLER_BIT_NUM; // 速度分辨率的一半
+        const double DOPPLER_TOL = 2 * velocity_max / SLICEHOUGH_DOPPLER_BIT_NUM; // 速度分辨率的一半
         const double CENTER_X = cluster.center_x;
         const double CENTER_Y = cluster.center_y;
 
@@ -646,8 +620,8 @@ namespace track_project::trackinit
             std::array<TrackPoint, 4> track;
             bool valid = true;
 
-            // 对于HOUGHSLICE_BATCH_NUM批次数据，只检查最新的4个批次，依据多普勒速度和距离约束去寻找符合条件的点迹
-            for (size_t batch = HOUGHSLICE_BATCH_NUM - 4; batch < HOUGHSLICE_BATCH_NUM && valid; ++batch)
+            // 对于SLICEHOUGH_BATCH_NUM批次数据，只检查最新的4个批次，依据多普勒速度和距离约束去寻找符合条件的点迹
+            for (size_t batch = SLICEHOUGH_BATCH_NUM - 4; batch < SLICEHOUGH_BATCH_NUM && valid; ++batch)
             {
                 const auto &points = cluster.point_list[batch];
                 bool found = false;
@@ -658,7 +632,7 @@ namespace track_project::trackinit
                     double rel_y = point.y - CENTER_Y;
                     double point_rho = rel_x * cos_theta + rel_y * sin_theta;
 
-                    if (std::abs(point_rho - rho) < HOUGHSLICE_RHO_CLUSTER_TOL_KM && std::abs(point.doppler - doppler) < DOPPLER_TOL)
+                    if (std::abs(point_rho - rho) < SLICEHOUGH_RHO_CLUSTER_TOL_KM && std::abs(point.doppler - doppler) < DOPPLER_TOL)
                     {
                         track[batch] = point;
                         found = true;
@@ -677,7 +651,7 @@ namespace track_project::trackinit
         }
     }
 
-    void HoughSlice::clear_all()
+    void SliceHough::clear_all()
     {
         ClustArea.clear_all();
     }
