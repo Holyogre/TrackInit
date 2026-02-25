@@ -19,15 +19,15 @@
 constexpr double TIME_INTERVAL_S = 10.0;
 
 using track_project::TrackPoint;
-using track_project::trackinit::SliceHough;
-using track_project::trackinit::SLICEHOUGH_CLUSTER_RADIUS_KM;
+using track_project::trackinit::HoughSlice;
+using track_project::trackinit::HOUGHSLICE_CLUSTER_RADIUS_KM;
 
 // 友元访问器，实现对私有聚类函数的调用
 namespace track_project::trackinit
 {
     struct test_HoughSlice
     {
-        static void run_cluster_process(SliceHough &alg, const std::vector<TrackPoint> &pts)
+        static void run_cluster_process(HoughSlice &alg, const std::vector<TrackPoint> &pts)
         {
             alg.process_cluster_generation(pts);
         }
@@ -43,15 +43,15 @@ TEST_CASE("功能测试", "[FunctionalityCheck]")
     unsigned int seed = 42;
 
     // 生成高斯分布的10个点迹
-    auto points = generate_gaussian_points(1, 0,
-                                           0, SLICEHOUGH_CLUSTER_RADIUS_KM / 4,
-                                           0, SLICEHOUGH_CLUSTER_RADIUS_KM / 4,
+    auto points = generate_gaussian_points(10, 0,
+                                           0, HOUGHSLICE_CLUSTER_RADIUS_KM / 4,
+                                           0, HOUGHSLICE_CLUSTER_RADIUS_KM / 4,
                                            100.0, 50.0,
                                            seed);
     std::vector<std::array<TrackPoint, 4>> new_tracks;
 
-    // 创建SliceHough对象
-    SliceHough alg;
+    // 创建HoughSlice对象
+    HoughSlice alg;
 
     // 创建航迹管理器
     track_project::ManagementService track_manager(-0.5, 0.5, -0.5, 0.5); // 经纬度范围
@@ -98,7 +98,7 @@ TEST_CASE("功能测试", "[FunctionalityCheck]")
 
     alg.process(points, new_tracks);
 
-    std::this_thread::sleep_for(std::chrono::seconds(3));
+    std::this_thread::sleep_for(std::chrono::seconds(5));
 }
 
 // TEST_CASE("聚类压测（废弃，另一个函数已经被删除了，log有）", "[clust_gen]")
@@ -114,8 +114,8 @@ TEST_CASE("功能测试", "[FunctionalityCheck]")
 //     const double x_min = -400.0, x_max = 400.0;
 //     const double y_min = -400.0, y_max = 400.0;
 //     const double v_mean = 10.0, v_stddev = 5.0;
-//     const int x_cell = 1 + static_cast<int>((x_max - x_min) / SLICEHOUGH_CLUSTER_RADIUS_KM);
-//     const int y_cell = 1 + static_cast<int>((y_max - y_min) / SLICEHOUGH_CLUSTER_RADIUS_KM);
+//     const int x_cell = 1 + static_cast<int>((x_max - x_min) / HOUGHSLICE_CLUSTER_RADIUS_KM);
+//     const int y_cell = 1 + static_cast<int>((y_max - y_min) / HOUGHSLICE_CLUSTER_RADIUS_KM);
 
 //     // 生成数据
 //     std::vector<TrackPoint> uniform_point, gauss_point, rayleigh_point;
@@ -133,8 +133,8 @@ TEST_CASE("功能测试", "[FunctionalityCheck]")
 //     used_cells.insert({0, 0});
 //     auto single_clust_point = generate_gaussian_points(
 //         POINTS_PER_CLUSTER, TIME_INTERVAL_S,
-//         0, SLICEHOUGH_CLUSTER_RADIUS_KM / 2,
-//         0, SLICEHOUGH_CLUSTER_RADIUS_KM / 2,
+//         0, HOUGHSLICE_CLUSTER_RADIUS_KM / 2,
+//         0, HOUGHSLICE_CLUSTER_RADIUS_KM / 2,
 //         v_mean, v_stddev, seed);
 
 //     while (centers.size() < N_CLUSTERS_5)
@@ -145,8 +145,8 @@ TEST_CASE("功能测试", "[FunctionalityCheck]")
 //         if (used_cells.find({cell_x, cell_y}) == used_cells.end())
 //         {
 //             used_cells.insert({cell_x, cell_y});
-//             double center_x = x_min + (cell_x + 0.5) * SLICEHOUGH_CLUSTER_RADIUS_KM;
-//             double center_y = y_min + (cell_y + 0.5) * SLICEHOUGH_CLUSTER_RADIUS_KM;
+//             double center_x = x_min + (cell_x + 0.5) * HOUGHSLICE_CLUSTER_RADIUS_KM;
+//             double center_y = y_min + (cell_y + 0.5) * HOUGHSLICE_CLUSTER_RADIUS_KM;
 //             centers.emplace_back(center_x, center_y);
 //         }
 //     }
@@ -159,18 +159,18 @@ TEST_CASE("功能测试", "[FunctionalityCheck]")
 //         // 均匀分布点
 //         auto temp_uniform = generate_uniform_points(
 //             POINTS_PER_CLUSTER, 0,
-//             center.first - SLICEHOUGH_CLUSTER_RADIUS_KM / 2,
-//             center.first + SLICEHOUGH_CLUSTER_RADIUS_KM / 2,
-//             center.second - SLICEHOUGH_CLUSTER_RADIUS_KM / 2,
-//             center.second + SLICEHOUGH_CLUSTER_RADIUS_KM / 2,
+//             center.first - HOUGHSLICE_CLUSTER_RADIUS_KM / 2,
+//             center.first + HOUGHSLICE_CLUSTER_RADIUS_KM / 2,
+//             center.second - HOUGHSLICE_CLUSTER_RADIUS_KM / 2,
+//             center.second + HOUGHSLICE_CLUSTER_RADIUS_KM / 2,
 //             v_mean, v_stddev, seed);
 //         uniform_point.insert(uniform_point.end(), temp_uniform.begin(), temp_uniform.end());
 
 //         // 高斯分布点
 //         auto temp_gauss = generate_gaussian_points(
 //             POINTS_PER_CLUSTER, 0,
-//             center.first, SLICEHOUGH_CLUSTER_RADIUS_KM / 4,
-//             center.second, SLICEHOUGH_CLUSTER_RADIUS_KM / 4,
+//             center.first, HOUGHSLICE_CLUSTER_RADIUS_KM / 4,
+//             center.second, HOUGHSLICE_CLUSTER_RADIUS_KM / 4,
 //             v_mean, v_stddev, seed);
 //         gauss_point.insert(gauss_point.end(), temp_gauss.begin(), temp_gauss.end());
 
@@ -178,7 +178,7 @@ TEST_CASE("功能测试", "[FunctionalityCheck]")
 //         auto temp_rayleigh = generate_rayleigh_points(
 //             POINTS_PER_CLUSTER, 0,
 //             center.first, center.second,
-//             SLICEHOUGH_CLUSTER_RADIUS_KM / 4, 1.0,
+//             HOUGHSLICE_CLUSTER_RADIUS_KM / 4, 1.0,
 //             v_mean, v_stddev, seed);
 //         rayleigh_point.insert(rayleigh_point.end(), temp_rayleigh.begin(), temp_rayleigh.end());
 //     }
@@ -186,7 +186,7 @@ TEST_CASE("功能测试", "[FunctionalityCheck]")
 //     // 存入Accessor构造第一批聚类
 //     SECTION("完全随机情况下的点迹更新测试")
 //     {
-//         SliceHough alg;
+//         HoughSlice alg;
 //         test_HoughSlice::run_cluster_process(alg, noise_point); // 预先放入一批数据
 
 //         // 更新所有点迹
@@ -203,7 +203,7 @@ TEST_CASE("功能测试", "[FunctionalityCheck]")
 
 //     SECTION("五个均匀分布聚类测试")
 //     {
-//         SliceHough alg;
+//         HoughSlice alg;
 //         test_HoughSlice::run_cluster_process(alg, uniform_point); // 预先放入一批数据
 
 //         // 更新所有点迹
@@ -224,7 +224,7 @@ TEST_CASE("功能测试", "[FunctionalityCheck]")
 
 //     SECTION("五个高斯分布聚类测试")
 //     {
-//         SliceHough alg;
+//         HoughSlice alg;
 //         test_HoughSlice::run_cluster_process(alg, gauss_point); // 预先放入一批数据
 
 //         // 更新所有点迹
@@ -245,7 +245,7 @@ TEST_CASE("功能测试", "[FunctionalityCheck]")
 
 //     SECTION("五个瑞利分布聚类测试")
 //     {
-//         SliceHough alg;
+//         HoughSlice alg;
 //         test_HoughSlice::run_cluster_process(alg, rayleigh_point); // 预先放入一批数据
 
 //         // 更新所有点迹
