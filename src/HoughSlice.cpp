@@ -112,25 +112,37 @@ namespace track_project::trackinit
             }
             LOG_DEBUG << "检测到峰值总数：" << total_peaks;
 
-            // 输出有峰值的多普勒位
-            std::stringstream doppler_stats;
-            doppler_stats << "各多普勒速度位峰值数量: ";
-            bool first = true;
-            for (size_t d = 0; d < detected_lines.size(); ++d)
+            // ==================== 保存峰值点迹到CSV文件 ====================
+            // 生成文件名，包含时间戳或聚类中心信息
+            char filename[256];
+            snprintf(filename, sizeof(filename), "/home/holyogre/TrackInit/peaks_cluster_%.0f_%.0f_%ld.csv",
+                     it_clust->center_x, it_clust->center_y, time(nullptr));
+
+            FILE *fp = fopen(filename, "w");
+            if (fp)
             {
-                if (doppler_counts[d] > 0)
+                // 写入CSV表头（可选，如果不需要可以注释掉）
+                fprintf(fp, "THETA,RHO,DOPPLER\n");
+
+                size_t written_count = 0;
+                for (size_t d = 0; d < detected_lines.size(); ++d)
                 {
-                    if (!first)
-                        doppler_stats << ", ";
-                    doppler_stats << d << ":" << doppler_counts[d];
-                    first = false;
+                    for (const auto &peak : detected_lines[d])
+                    {
+                        // peak[0] = theta索引, peak[1] = rho索引
+                        fprintf(fp, "%zu,%zu,%zu\n", peak[0], peak[1], d);
+                        written_count++;
+                    }
                 }
+
+                fclose(fp);
+                LOG_DEBUG << "已保存 " << written_count << " 个峰值点到CSV文件: " << filename;
             }
-            if (first)
+            else
             {
-                doppler_stats << "无";
+                LOG_ERROR << "无法创建CSV文件: " << filename;
             }
-            LOG_DEBUG << doppler_stats.str();
+
 #endif
 
             // ==================== STEP4: 点迹凝聚 ====================
@@ -495,7 +507,7 @@ namespace track_project::trackinit
         result.write_bytes(buf1.data(), 0, BYTES_PER_BATCH);
 
         // 依次处理后续批次
-        for (size_t batch = 1; batch < HOUGHSLICE_BATCH_NUM; ++batch)
+        for (size_t batch = HOUGHSLICE_BATCH_NUM - 4; batch < HOUGHSLICE_BATCH_NUM; ++batch)
         {
             cell.read_bytes(buf2.data(), batch * BYTES_PER_BATCH, BYTES_PER_BATCH);
 
@@ -630,7 +642,7 @@ namespace track_project::trackinit
     void HoughSlice::process_backtrack_points(const std::vector<std::array<double, 3>> &detected_lines, const Slice &cluster,
                                               std::vector<std::array<TrackPoint, 4>> &new_track)
     {
-        const double DOPPLER_TOL = 3 * track_project::velocity_max / HOUGHSLICE_DOPPLER_BIT_NUM; // 速度分辨率的一半
+        const double DOPPLER_TOL = track_project::velocity_max / HOUGHSLICE_DOPPLER_BIT_NUM; // +-速度分辨率的一半
         const double CENTER_X = cluster.center_x;
         const double CENTER_Y = cluster.center_y;
 

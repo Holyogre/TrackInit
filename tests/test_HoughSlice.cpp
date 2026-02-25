@@ -42,13 +42,18 @@ TEST_CASE("功能测试", "[FunctionalityCheck]")
     // unsigned int seed = Catch::getSeed();
     unsigned int seed = 42;
 
-    // 生成高斯分布的10个点迹
+    // 生成高斯分布的点迹
     auto points = generate_gaussian_points(10, 0,
                                            0, HOUGHSLICE_CLUSTER_RADIUS_KM / 4,
                                            0, HOUGHSLICE_CLUSTER_RADIUS_KM / 4,
                                            100.0, 50.0,
                                            seed);
     std::vector<std::array<TrackPoint, 4>> new_tracks;
+
+    // //debug测试
+    // auto point=points[1];
+    // points.clear();
+    // points.push_back(point);
 
     // 创建HoughSlice对象
     HoughSlice alg;
