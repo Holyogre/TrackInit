@@ -59,7 +59,8 @@ namespace track_project::trackinit
             std::stringstream filename;
             filename << "../hough_debug_"
                      << std::fixed << std::setprecision(1) << it_clust->center_x << "_"
-                     << std::setprecision(1) << it_clust->center_y << ".dat";
+                     << std::setprecision(1) << it_clust->center_y
+                     << ".dat";
 
             // 打开文件
             std::ofstream file(filename.str(), std::ios::binary);
@@ -76,9 +77,17 @@ namespace track_project::trackinit
                     for (size_t rho = 0; rho < HOUGH_RHO_DIM; ++rho)
                     {
                         BitArray<HOUGHSLICE_DOPPLER_BIT_NUM * HOUGHSLICE_BATCH_NUM> votes = it_clust->vote_area[theta][rho];
+                        if (!votes.none() && theta == 35) // 仅输出第一个点的投票结果用于检查
+                        {
+                            LOG_DEBUG << "原始数据: " << it_clust->vote_area[theta][rho];
+                            LOG_DEBUG << "theta=" << theta << ", rho=" << rho << ", votes=" << votes;
+                            LOG_DEBUG << "sizeof(votes) = " << sizeof(votes);
+                        }
                         file.write(reinterpret_cast<const char *>(&votes), HOUGHSLICE_DOPPLER_BIT_NUM * HOUGHSLICE_BATCH_NUM / 8);
+
                     }
                 }
+                file.flush();
 
                 file.close();
             }
@@ -469,7 +478,7 @@ namespace track_project::trackinit
                     continue;
                 }
 
-                LOG_DEBUG << "检测到峰值：angle_idx=" << angle_idx << ", distance_idx=" << distance_idx;
+                LOG_DEBUG << "检测到峰值：angle_idx=" << angle_idx << ", distance_idx=" << distance_idx << ", common_votes=" << common_votes;
 
                 // 遍历所有速度位
                 for (size_t speed_bit = 0; speed_bit < HOUGHSLICE_DOPPLER_BIT_NUM; ++speed_bit)
@@ -480,30 +489,6 @@ namespace track_project::trackinit
                         detected_lines_by_doppler[speed_bit].push_back({angle_idx, distance_idx});
                     }
                 }
-            }
-        }
-
-        // 打印 (35,590) 周围一圈的峰值
-        LOG_DEBUG << "===== (35,590) 周围一圈 =====";
-        for (int di = -1; di <= 1; ++di)
-        {
-            for (int dj = -1; dj <= 1; ++dj)
-            {
-                int ni = 35 + di;
-                int nj = 590 + dj;
-                LOG_DEBUG << "(" << ni << "," << nj << "): " << cluster.vote_area[ni][nj];
-            }
-        }
-
-        // 打印 (36,589) 周围一圈的峰值
-        LOG_DEBUG << "===== (36,589) 周围一圈 =====";
-        for (int di = -1; di <= 1; ++di)
-        {
-            for (int dj = -1; dj <= 1; ++dj)
-            {
-                int ni = 36 + di;
-                int nj = 589 + dj;
-                LOG_DEBUG << "(" << ni << "," << nj << "): " << cluster.vote_area[ni][nj];
             }
         }
 

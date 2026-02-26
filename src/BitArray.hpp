@@ -171,6 +171,7 @@ namespace track_project::trackinit
             data.fill(0);
         }
 
+        //判断是否全为0
         bool none() const
         {
             for (size_t i = 0; i < NumBits; ++i)
