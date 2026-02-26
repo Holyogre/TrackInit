@@ -10,6 +10,8 @@
 #include <cstring>
 #include <set>
 #include <thread>
+#include <condition_variable>
+#include <csignal>
 
 #include "Func_pointgen.hpp" //测试点迹生成以及更新函数
 #include "Func_cout.hpp"     //一些<<重载，方便输出
@@ -21,6 +23,23 @@ constexpr double TIME_INTERVAL_S = 10.0;
 using track_project::TrackPoint;
 using track_project::trackinit::HoughSlice;
 using track_project::trackinit::HOUGHSLICE_CLUSTER_RADIUS_KM;
+
+std::atomic<bool> g_running{true};
+std::condition_variable g_cv;
+std::mutex g_mutex;
+
+void signal_handler(int)
+{
+    g_running = false;
+    g_cv.notify_one();
+}
+
+void wait_seconds(int seconds)
+{
+    std::unique_lock<std::mutex> lock(g_mutex);
+    g_cv.wait_for(lock, std::chrono::seconds(seconds), []
+                  { return !g_running; });
+}
 
 // 友元访问器，实现对私有聚类函数的调用
 namespace track_project::trackinit
@@ -38,14 +57,16 @@ using track_project::trackinit::test_HoughSlice;
 
 TEST_CASE("功能测试", "[FunctionalityCheck]")
 {
+    std::signal(SIGINT, signal_handler);
+
     // 随机数种子
     // unsigned int seed = Catch::getSeed();
     unsigned int seed = 42;
 
     // 生成高斯分布的点迹
-    auto points = generate_gaussian_points(10, 0,
-                                           0, HOUGHSLICE_CLUSTER_RADIUS_KM / 4,
-                                           0, HOUGHSLICE_CLUSTER_RADIUS_KM / 4,
+    auto points = generate_gaussian_points(3, 0,
+                                           0, 10,
+                                           0, 10,
                                            100.0, 50.0,
                                            seed);
     std::vector<std::array<TrackPoint, 4>> new_tracks;
@@ -103,7 +124,10 @@ TEST_CASE("功能测试", "[FunctionalityCheck]")
 
     alg.process(points, new_tracks);
 
-    std::this_thread::sleep_for(std::chrono::seconds(5));
+    // std::this_thread::sleep_for(std::chrono::seconds(5));
+    while (g_running) {
+        wait_seconds(5);  // 可被 CTRL+C 中断的等待
+    }
 }
 
 // TEST_CASE("聚类压测（废弃，另一个函数已经被删除了，log有）", "[clust_gen]")

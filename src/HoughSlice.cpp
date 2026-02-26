@@ -57,7 +57,7 @@ namespace track_project::trackinit
         {
             // 生成文件名
             std::stringstream filename;
-            filename << "/home/holyogre/TrackInit/hough_debug_"
+            filename << "../hough_debug_"
                      << std::fixed << std::setprecision(1) << it_clust->center_x << "_"
                      << std::setprecision(1) << it_clust->center_y << ".dat";
 
@@ -69,8 +69,6 @@ namespace track_project::trackinit
                 uint32_t dims[2] = {static_cast<uint32_t>(HOUGH_RHO_DIM),
                                     static_cast<uint32_t>(HOUGH_THETA_DIM)};
                 file.write(reinterpret_cast<const char *>(dims), 2 * sizeof(uint32_t));
-
-                // 统计信息
 
                 // 写入数据并统计
                 for (size_t theta = 0; theta < HOUGH_THETA_DIM; ++theta)
@@ -115,7 +113,7 @@ namespace track_project::trackinit
             // ==================== 保存峰值点迹到CSV文件 ====================
             // 生成文件名，包含时间戳或聚类中心信息
             char filename[256];
-            snprintf(filename, sizeof(filename), "/home/holyogre/TrackInit/peaks_cluster_%.0f_%.0f_%ld.csv",
+            snprintf(filename, sizeof(filename), "../peaks_cluster_%.0f_%.0f_%ld.csv",
                      it_clust->center_x, it_clust->center_y, time(nullptr));
 
             FILE *fp = fopen(filename, "w");
@@ -288,8 +286,6 @@ namespace track_project::trackinit
             int64_t t_end = it_clust.point_list[HOUGHSLICE_BATCH_NUM - 1][0].time.milliseconds;
             double dt = static_cast<double>(t_end - t_start) / 1000.0 / (HOUGHSLICE_BATCH_NUM - 1); // 转换为秒
 
-            dt = 0;
-
             if (dt > 0)
             {
                 // 计算点迹到雷达的距离（km转m）
@@ -307,7 +303,6 @@ namespace track_project::trackinit
                 // 转换为位数：doppler_tolerance_bits = round((Δv / velocity_max) * DOPPLER_BIT_NUM)
                 doppler_tolerance_bits = static_cast<int>(std::round((delta_v / track_project::velocity_max) * HOUGHSLICE_DOPPLER_BIT_NUM));
                 doppler_tolerance_bits = std::clamp(doppler_tolerance_bits, 0, static_cast<int>(HOUGHSLICE_DOPPLER_BIT_NUM) - 1);
-
             }
         }
 
@@ -404,18 +399,18 @@ namespace track_project::trackinit
         int center_bit_pos = 0;
         if (ratio < 0)
         {
-            // 负数：使用低半区 (bits 0 到 HOUGHSLICE_DOPPLER_BIT_NUM/2 - 1)
             double abs_ratio = -ratio; // 0.0 ~ 1.0
-            int level = static_cast<int>(std::floor(abs_ratio * LEVELS_PER_SIDE));
+            // 希望 abs_ratio=0.1 → bit=31, abs_ratio=1.0 → bit=0
+            int level = static_cast<int>(std::floor((1.0 - abs_ratio) * LEVELS_PER_SIDE));
             level = std::clamp(level, 0, static_cast<int>(LEVELS_PER_SIDE) - 1);
-            center_bit_pos = level;
+            center_bit_pos = level; // 现在 level=31 for 0.1, level=0 for 1.0
         }
         else // ratio > 0
         {
-            // 正数：使用高半区 (bits HOUGHSLICE_DOPPLER_BIT_NUM/2 到 HOUGHSLICE_DOPPLER_BIT_NUM-1)
-            int level = static_cast<int>(std::floor(ratio * LEVELS_PER_SIDE));
+            // 希望 ratio=0.1 → bit=32, ratio=1.0 → bit=63
+            int level = static_cast<int>(std::floor((1.0 - ratio) * LEVELS_PER_SIDE));
             level = std::clamp(level, 0, static_cast<int>(LEVELS_PER_SIDE) - 1);
-            center_bit_pos = HOUGHSLICE_DOPPLER_BIT_NUM / 2 + level;
+            center_bit_pos = HOUGHSLICE_DOPPLER_BIT_NUM / 2 + (LEVELS_PER_SIDE - 1 - level);
         }
 
         // 设置中心位及其相邻的 ±doppler_tolerance_bits 范围内的位
@@ -474,6 +469,8 @@ namespace track_project::trackinit
                     continue;
                 }
 
+                LOG_DEBUG << "检测到峰值：angle_idx=" << angle_idx << ", distance_idx=" << distance_idx;
+
                 // 遍历所有速度位
                 for (size_t speed_bit = 0; speed_bit < HOUGHSLICE_DOPPLER_BIT_NUM; ++speed_bit)
                 {
@@ -483,6 +480,30 @@ namespace track_project::trackinit
                         detected_lines_by_doppler[speed_bit].push_back({angle_idx, distance_idx});
                     }
                 }
+            }
+        }
+
+        // 打印 (35,590) 周围一圈的峰值
+        LOG_DEBUG << "===== (35,590) 周围一圈 =====";
+        for (int di = -1; di <= 1; ++di)
+        {
+            for (int dj = -1; dj <= 1; ++dj)
+            {
+                int ni = 35 + di;
+                int nj = 590 + dj;
+                LOG_DEBUG << "(" << ni << "," << nj << "): " << cluster.vote_area[ni][nj];
+            }
+        }
+
+        // 打印 (36,589) 周围一圈的峰值
+        LOG_DEBUG << "===== (36,589) 周围一圈 =====";
+        for (int di = -1; di <= 1; ++di)
+        {
+            for (int dj = -1; dj <= 1; ++dj)
+            {
+                int ni = 36 + di;
+                int nj = 589 + dj;
+                LOG_DEBUG << "(" << ni << "," << nj << "): " << cluster.vote_area[ni][nj];
             }
         }
 
@@ -502,7 +523,7 @@ namespace track_project::trackinit
         std::vector<uint8_t> buf1(BYTES_PER_BATCH);
         std::vector<uint8_t> buf2(BYTES_PER_BATCH);
 
-        // 读取第一个批次
+        // 读取倒数第4批次
         cell.read_bytes(buf1.data(), 0, BYTES_PER_BATCH);
 
         // 创建结果对象并写入
@@ -510,7 +531,7 @@ namespace track_project::trackinit
         result.write_bytes(buf1.data(), 0, BYTES_PER_BATCH);
 
         // 依次处理后续批次
-        for (size_t batch = HOUGHSLICE_BATCH_NUM - 4; batch < HOUGHSLICE_BATCH_NUM; ++batch)
+        for (size_t batch = 1; batch < HOUGHSLICE_BATCH_NUM; ++batch)
         {
             cell.read_bytes(buf2.data(), batch * BYTES_PER_BATCH, BYTES_PER_BATCH);
 
@@ -523,6 +544,7 @@ namespace track_project::trackinit
         return result;
     }
 
+    // 霍夫空间参数凝聚
     std::vector<std::array<double, 3>> HoughSlice::process_condense_detected_lines(
         const std::vector<std::vector<std::array<size_t, 2>>> &detected_lines) const
     {

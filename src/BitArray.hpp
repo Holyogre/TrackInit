@@ -271,5 +271,18 @@ namespace track_project::trackinit
 
         // 获取数据（用于调试）
         const std::array<uint32_t, NUM_WORDS> &get_data() const { return data; }
+
+        friend std::ostream &operator<<(std::ostream &os, const BitArray &bit_array)
+        {
+            os << "BitArray<" << NumBits << ">[";
+            for (size_t i = 0; i < bit_array.NUM_WORDS; ++i)
+            {
+                char hex_str[9];
+                sprintf(hex_str, "%08X", bit_array.data[i]);
+                os << (i > 0 ? " " : "") << "0x" << hex_str;
+            }
+            os << "]";
+            return os;
+        }
     };
 }
