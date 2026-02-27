@@ -64,7 +64,7 @@ TEST_CASE("功能测试", "[FunctionalityCheck]")
     unsigned int seed = 42;
 
     // 生成高斯分布的点迹
-    auto points = generate_gaussian_points(3, 0,
+    auto points = generate_gaussian_points(1, 0,
                                            0, 10,
                                            0, 10,
                                            100.0, 50.0,

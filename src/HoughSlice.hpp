@@ -49,7 +49,8 @@ namespace track_project::trackinit
             int current_batch_index;                                              // 当前批次索引，从0开始
             std::array<std::vector<TrackPoint>, HOUGHSLICE_BATCH_NUM> point_list; // 历史点迹检索
             double center_x, center_y;                                            // 聚类中心点坐标
-            // 角度索引依据北偏东做分割，正北索引为0，是射线而非直线；截距索引依据负到正做分割，0点为 -2R，2R点为 +2R
+            // 截距索引依据负到正做分割，0点为 -R，2R点为 +R
+            // 角度索引为法线方向，范围为(-90,90)，0点为y轴正方向，90点为x轴正方向，-90点为x轴负方向，按索引恰好为HEADING方向
             std::array<std::array<BitArray<HOUGH_VOTE_BIT_NUM>, HOUGH_RHO_DIM>, HOUGH_THETA_DIM> vote_area;
 
             // 为ObjectPool添加clear方法

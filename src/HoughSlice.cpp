@@ -77,14 +77,7 @@ namespace track_project::trackinit
                     for (size_t rho = 0; rho < HOUGH_RHO_DIM; ++rho)
                     {
                         BitArray<HOUGHSLICE_DOPPLER_BIT_NUM * HOUGHSLICE_BATCH_NUM> votes = it_clust->vote_area[theta][rho];
-                        if (!votes.none() && theta == 35) // 仅输出第一个点的投票结果用于检查
-                        {
-                            LOG_DEBUG << "原始数据: " << it_clust->vote_area[theta][rho];
-                            LOG_DEBUG << "theta=" << theta << ", rho=" << rho << ", votes=" << votes;
-                            LOG_DEBUG << "sizeof(votes) = " << sizeof(votes);
-                        }
                         file.write(reinterpret_cast<const char *>(&votes), HOUGHSLICE_DOPPLER_BIT_NUM * HOUGHSLICE_BATCH_NUM / 8);
-
                     }
                 }
                 file.flush();
@@ -157,16 +150,38 @@ namespace track_project::trackinit
 #ifndef NDEBUG
             LOG_DEBUG << "===== [STEP4] 点迹凝聚 =====";
             LOG_DEBUG << "凝聚后直线数量：" << condensed_lines.size();
-            // 输出每条凝聚直线的详细参数
+
+            // 存储已经输出过的 (theta, rho) 组合
+            std::vector<std::pair<double, double>> outputted_lines;
+
+            // 输出每条凝聚直线的详细参数（去重）
             for (size_t i = 0; i < condensed_lines.size(); ++i)
             {
                 const auto &line = condensed_lines[i];
-                LOG_DEBUG << "直线[" << i << "]: theta=" << line[0]
-                          << " rad (" << line[0] * 180.0 / M_PI << "°)"
-                          << ", rho=" << line[1] << " km"
-                          << ", doppler=" << line[2] << " m/s";
-            }
 
+                // 检查是否已经输出过相同的 (theta, rho)
+                bool already_output = false;
+                for (const auto &outputted : outputted_lines)
+                {
+                    if (std::abs(line[0] - outputted.first) < 1e-6 &&
+                        std::abs(line[1] - outputted.second) < 1e-6)
+                    {
+                        already_output = true;
+                        break;
+                    }
+                }
+
+                // 如果没有输出过，才输出
+                if (!already_output)
+                {
+                    LOG_DEBUG << "直线[" << i << "]: theta=" << line[0]
+                              << " rad (" << line[0] * 180.0 / M_PI << "°)"
+                              << ", rho=" << line[1] << " km";
+
+                    // 记录这个组合
+                    outputted_lines.emplace_back(line[0], line[1]);
+                }
+            }
 #endif
 
             // ==================== STEP5: 点迹回溯 ====================
@@ -316,7 +331,7 @@ namespace track_project::trackinit
         }
 
         // 计算基准航向，依据doppler的正负确定是朝向还是背向，为极坐标表示方法，便于调用math库函数计算
-        double line_of_sight_rad = std::atan2(point.y, point.x); // 观测航向
+        double line_of_sight_rad = std::atan2(point.y, point.x); // 观测方向（极坐标）
         double base_dir_rad = 0.0;
         if (point.doppler > 0) // 表示靠近还是原理，以此决定是否加PI
         {
@@ -335,17 +350,17 @@ namespace track_project::trackinit
             }
         }
 
-        // 计算可能的速度方向与视线方向的夹角
-        double angle_rad = std::acos(speed / track_project::velocity_max); // 计算夹角，弧度，范围[0,pi/2]
+        // 计算可能的速度方向与视线方向的夹角,speed不可能为0，此时检测不出来
+        double angle_rad = std::acos(speed / track_project::velocity_max); // 计算夹角，弧度，范围[0,pi/2)
+        angle_rad = std::clamp(angle_rad, 1e-4, M_PI / 2.0 - 1e-4);        // 确保夹角在合理范围内
 
         double heading1 = base_dir_rad - angle_rad;
         double heading2 = base_dir_rad + angle_rad;
 
-        //  区间为(heading1,heading2)∪(heading3,heading4)，且heading1<=heading2<=heading3<=heading4
-        if (heading1 < 0) // 仅有可能heading1小于0
+        //  所有heading区间归一化为0-pi的连续区间，;heading1和heading2的绝对值差不可能超过180度，射线方向性由DOPPLER保证
+        if (heading1 <= 0) // 仅有可能heading1小于0，此时heading2必然小于pi
         {
             double heading3 = 0.0, heading4 = M_PI;
-            // 射线方向性可以由doppler确定，故可以将区间调整为(0,heading2)∪(heading3+π,π)
             heading3 = heading1 + M_PI;
             heading4 = M_PI;
             heading1 = 0.0;
@@ -353,7 +368,7 @@ namespace track_project::trackinit
             vote_in_hough_space(heading1, heading2, point.doppler, rel_x, rel_y, batch, doppler_tolerance_bits, it_clust.vote_area);
             vote_in_hough_space(heading3, heading4, point.doppler, rel_x, rel_y, batch, doppler_tolerance_bits, it_clust.vote_area);
         }
-        else if (heading2 > 2 * M_PI) // 仅有可能heading2大于2π
+        else if (heading2 >= 2 * M_PI) // 仅有可能heading2大于2π,此时heading1必然大于π
         {
             double heading3 = 0.0, heading4 = M_PI;
             // 射线方向性可以由doppler确定，由angle_rad保证heading3必然位于(π,2π)，故区间为(0,heading2-2π)∪(heading1-π,π)
@@ -364,9 +379,26 @@ namespace track_project::trackinit
             vote_in_hough_space(heading1, heading2, point.doppler, rel_x, rel_y, batch, doppler_tolerance_bits, it_clust.vote_area);
             vote_in_hough_space(heading3, heading4, point.doppler, rel_x, rel_y, batch, doppler_tolerance_bits, it_clust.vote_area);
         }
-        else
+        else if (heading1 <= M_PI && heading2 <= M_PI) // 正常情况，区间为(heading1,heading2)
         {
             vote_in_hough_space(heading1, heading2, point.doppler, rel_x, rel_y, batch, doppler_tolerance_bits, it_clust.vote_area);
+        }
+        else if (heading1 <= M_PI && heading2 > M_PI) // 可能存在heading1<π<heading2的情况，此时区间为(0,heading2-π)∪(heading1+π,2π)
+        {
+            double heading3 = heading1;
+            double heading4 = M_PI;
+            heading1 = 0.0;
+            heading2 = heading2 - M_PI;
+            vote_in_hough_space(heading1, heading2, point.doppler, rel_x, rel_y, batch, doppler_tolerance_bits, it_clust.vote_area);
+            vote_in_hough_space(heading3, heading4, point.doppler, rel_x, rel_y, batch, doppler_tolerance_bits, it_clust.vote_area);
+        }
+        else if (heading1 > M_PI && heading2 < 2 * M_PI) // 可能存在heading1>heading2>pi的情况，此时区间为(heading1-π,heading2-π)
+        {
+            vote_in_hough_space(heading1 - M_PI, heading2 - M_PI, point.doppler, rel_x, rel_y, batch, doppler_tolerance_bits, it_clust.vote_area);
+        }
+        else
+        {
+            assert(0); // 不可能存在其他情况了，除非出BUG了（经参数扫描测试和边界测试确认不存在额外情况）
         }
     }
 
@@ -403,7 +435,6 @@ namespace track_project::trackinit
         {
             return;
         }
-
         // 计算中心位位置
         int center_bit_pos = 0;
         if (ratio < 0)
@@ -437,19 +468,19 @@ namespace track_project::trackinit
         for (std::uint32_t angle_idx = angle_idx_start; angle_idx < angle_idx_end; ++angle_idx)
         {
             double theta = angle_idx * HOUGHSLICE_THETA_RESOLUTION_DEG * M_PI / 180.0;
-            double distance = rel_x * std::cos(theta) + rel_y * std::sin(theta);
+            double rho = rel_x * std::cos(theta) + rel_y * std::sin(theta);
 
             // 计算距离索引
-            int distance_idx = static_cast<int>((distance + 2 * HOUGHSLICE_CLUSTER_RADIUS_KM) / HOUGHSLICE_RHO_RESOLUTION_KM);
-            if (distance_idx < 0 || distance_idx >= static_cast<int>(HOUGH_RHO_DIM))
+            int rho_idx = static_cast<int>((rho + 2 * HOUGHSLICE_CLUSTER_RADIUS_KM) / HOUGHSLICE_RHO_RESOLUTION_KM);
+            if (rho_idx < 0 || rho_idx >= static_cast<int>(HOUGH_RHO_DIM))
             {
                 continue;
             }
 
             // 获取对应的投票单元
             BitArray<HOUGH_VOTE_BIT_NUM> &cell = (angle_idx >= HOUGH_THETA_DIM)
-                                                     ? vote_area[angle_idx - HOUGH_THETA_DIM][distance_idx]
-                                                     : vote_area[angle_idx][distance_idx];
+                                                     ? vote_area[angle_idx - HOUGH_THETA_DIM][rho_idx]
+                                                     : vote_area[angle_idx][rho_idx];
 
             // 计算这个批次在总位数中的起始字节偏移
             size_t byte_offset = batch * BYTES_PER_BATCH;
@@ -462,15 +493,15 @@ namespace track_project::trackinit
     // 峰值检测,从霍夫变换空间中提取检测到的直线参数列表
     std::vector<std::vector<std::array<size_t, 2>>> HoughSlice::process_extract_peak_from_hough_space(Slice &cluster) const
     {
-        // 外层vector按doppler索引分组，内层vector存储该doppler下的(angle_idx, distance_idx)索引对
+        // 外层vector按doppler索引分组，内层vector存储该doppler下的(angle_idx, rho_idx)索引对
         std::vector<std::vector<std::array<size_t, 2>>> detected_lines_by_doppler(HOUGHSLICE_DOPPLER_BIT_NUM);
 
         for (size_t angle_idx = 0; angle_idx < HOUGH_THETA_DIM; ++angle_idx)
         {
-            for (size_t distance_idx = 0; distance_idx < HOUGH_RHO_DIM; ++distance_idx)
+            for (size_t rho_idx = 0; rho_idx < HOUGH_RHO_DIM; ++rho_idx)
             {
                 // 提取HOUGHSLICE_BATCH_NUM个批次的共同投票位
-                auto common_votes = peak_filter(angle_idx, distance_idx, cluster.vote_area);
+                auto common_votes = peak_filter(angle_idx, rho_idx, cluster.vote_area);
 
                 // 如果没有共同投票，跳过
                 if (common_votes.none())
@@ -478,15 +509,13 @@ namespace track_project::trackinit
                     continue;
                 }
 
-                LOG_DEBUG << "检测到峰值：angle_idx=" << angle_idx << ", distance_idx=" << distance_idx << ", common_votes=" << common_votes;
-
                 // 遍历所有速度位
                 for (size_t speed_bit = 0; speed_bit < HOUGHSLICE_DOPPLER_BIT_NUM; ++speed_bit)
                 {
                     if (common_votes.get_bit(speed_bit))
                     {
-                        // 直接按doppler索引分组存储(angle_idx, distance_idx)
-                        detected_lines_by_doppler[speed_bit].push_back({angle_idx, distance_idx});
+                        // 直接按doppler索引分组存储(angle_idx, rho_idx)
+                        detected_lines_by_doppler[speed_bit].push_back({angle_idx, rho_idx});
                     }
                 }
             }
@@ -497,10 +526,10 @@ namespace track_project::trackinit
 
     // 提取目标区域峰值
     BitArray<HOUGHSLICE_DOPPLER_BIT_NUM> HoughSlice::peak_filter(
-        const size_t angle_idx, const size_t distance_idx,
+        const size_t angle_idx, const size_t rho_idx,
         const std::array<std::array<BitArray<HOUGH_VOTE_BIT_NUM>, HOUGH_RHO_DIM>, HOUGH_THETA_DIM> &vote_area) const
     {
-        const auto &cell = vote_area[angle_idx][distance_idx];
+        const auto &cell = vote_area[angle_idx][rho_idx];
 
         constexpr size_t BYTES_PER_BATCH = HOUGHSLICE_DOPPLER_BIT_NUM / 8;
 
@@ -562,9 +591,9 @@ namespace track_project::trackinit
             return angle_idx * HOUGHSLICE_THETA_RESOLUTION_DEG * M_PI / 180.0;
         };
 
-        auto idx_to_rho = [](size_t distance_idx) -> double
+        auto idx_to_rho = [](size_t rho_idx) -> double
         {
-            return distance_idx * HOUGHSLICE_RHO_RESOLUTION_KM - 2 * HOUGHSLICE_CLUSTER_RADIUS_KM;
+            return rho_idx * HOUGHSLICE_RHO_RESOLUTION_KM - 2 * HOUGHSLICE_CLUSTER_RADIUS_KM;
         };
 
         // 遍历每个多普勒速度组
