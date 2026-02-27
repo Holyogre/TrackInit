@@ -64,12 +64,22 @@ TEST_CASE("功能测试", "[FunctionalityCheck]")
     unsigned int seed = 42;
 
     // 生成高斯分布的点迹
-    auto points = generate_gaussian_points(1, 0,
+    auto points = generate_gaussian_points(10, 0,
                                            0, 10,
                                            0, 10,
                                            100.0, 50.0,
                                            seed);
     std::vector<std::array<TrackPoint, 4>> new_tracks;
+
+    // 存储new_tracks为txt文件，只要sog,x0,y0三个值
+    std::ofstream ofs("new_tracks.txt");
+    ofs << "sog,x0,y0\n"; // 写入表头
+    for (const auto &track : new_tracks)
+    {
+        const auto &p = track[0]; // 只写入每条航迹的第一个点
+        ofs << p.sog << "," << p.x << "," << p.y << "\n";
+    }
+    ofs.close();
 
     // //debug测试
     // auto point=points[1];
@@ -125,8 +135,9 @@ TEST_CASE("功能测试", "[FunctionalityCheck]")
     alg.process(points, new_tracks);
 
     // std::this_thread::sleep_for(std::chrono::seconds(5));
-    while (g_running) {
-        wait_seconds(5);  // 可被 CTRL+C 中断的等待
+    while (g_running)
+    {
+        wait_seconds(5); // 可被 CTRL+C 中断的等待
     }
 }
 

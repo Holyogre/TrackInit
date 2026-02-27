@@ -115,8 +115,8 @@ namespace track_project::trackinit
             // ==================== 保存峰值点迹到CSV文件 ====================
             // 生成文件名，包含时间戳或聚类中心信息
             char filename[256];
-            snprintf(filename, sizeof(filename), "../peaks_cluster_%.0f_%.0f_%ld.csv",
-                     it_clust->center_x, it_clust->center_y, time(nullptr));
+            snprintf(filename, sizeof(filename), "../peaks_cluster_%.02f_%.02f.csv",
+                     it_clust->center_x, it_clust->center_y);
 
             FILE *fp = fopen(filename, "w");
             if (fp)
@@ -147,13 +147,8 @@ namespace track_project::trackinit
 
             // ==================== STEP4: 点迹凝聚 ====================
             std::vector<std::array<double, 3>> condensed_lines = process_condense_detected_lines(detected_lines);
-#ifndef NDEBUG
             LOG_DEBUG << "===== [STEP4] 点迹凝聚 =====";
             LOG_DEBUG << "凝聚后直线数量：" << condensed_lines.size();
-
-            // 存储已经输出过的 (theta, rho) 组合
-            std::vector<std::pair<double, double>> outputted_lines;
-
             // 输出每条凝聚直线的详细参数（去重）
             for (size_t i = 0; i < condensed_lines.size(); ++i)
             {
@@ -161,10 +156,11 @@ namespace track_project::trackinit
 
                 // 检查是否已经输出过相同的 (theta, rho)
                 bool already_output = false;
-                for (const auto &outputted : outputted_lines)
+                for (size_t j = 0; j < i; ++j)
                 {
-                    if (std::abs(line[0] - outputted.first) < 1e-6 &&
-                        std::abs(line[1] - outputted.second) < 1e-6)
+                    const auto &pre_line = condensed_lines[j];
+                    if (std::abs(line[0] - pre_line[0]) < 1e-6 &&
+                        std::abs(line[1] - pre_line[1]) < 1e-6)
                     {
                         already_output = true;
                         break;
@@ -174,15 +170,13 @@ namespace track_project::trackinit
                 // 如果没有输出过，才输出
                 if (!already_output)
                 {
-                    LOG_DEBUG << "直线[" << i << "]: theta=" << line[0]
-                              << " rad (" << line[0] * 180.0 / M_PI << "°)"
-                              << ", rho=" << line[1] << " km";
-
-                    // 记录这个组合
-                    outputted_lines.emplace_back(line[0], line[1]);
+                    // 反推直线的参数，y= -x * (cos(theta)/sin(theta)) + rho/sin(theta)，斜率k=-cos(theta)/sin(theta)，截距b=rho/sin(theta)
+                    double k = -std::cos(line[0]) / std::sin(line[0]);
+                    double cog_deg = fmod((90.0 - std::atan(k) * 180.0 / M_PI) + 360.0, 180.0); // 受限于theta
+                    LOG_DEBUG << "直线[" << i << "]: theta=" << line[0] * 180.0 / M_PI << ", b=" << line[1] / std::sin(line[0])
+                              << ", cog=" << cog_deg << ", rho" << line[1];
                 }
             }
-#endif
 
             // ==================== STEP5: 点迹回溯 ====================
             // STEP5不需要DEBUG日志，可以从显控查看结果
@@ -294,13 +288,6 @@ namespace track_project::trackinit
         double rel_x = point.x - it_clust.center_x;
         double rel_y = point.y - it_clust.center_y;
 
-        // 依据doppler和velocity_max计算所有可能的航向角度序列
-        double speed = std::abs(point.doppler); // 取绝对值，单位m/s
-        if (speed > track_project::velocity_max)
-        {
-            return; // 速度超过最大值，跳过该点迹
-        }
-
         // ==================== 计算 doppler_tolerance_bits ====================
         // 计算时间间隔 dt（秒）：使用 point_list 的第一个和最后一个批次的时间戳
         int doppler_tolerance_bits = 0;
@@ -330,6 +317,13 @@ namespace track_project::trackinit
             }
         }
 
+        // 依据doppler和velocity_max计算所有可能的航向角度序列
+        double abs_doppler = std::abs(point.doppler); // 取绝对值，单位m/s
+        if (abs_doppler > track_project::velocity_max)
+        {
+            return; // 速度超过最大值，跳过该点迹
+        }
+
         // 计算基准航向，依据doppler的正负确定是朝向还是背向，为极坐标表示方法，便于调用math库函数计算
         double line_of_sight_rad = std::atan2(point.y, point.x); // 观测方向（极坐标）
         double base_dir_rad = 0.0;
@@ -350,9 +344,9 @@ namespace track_project::trackinit
             }
         }
 
-        // 计算可能的速度方向与视线方向的夹角,speed不可能为0，此时检测不出来
-        double angle_rad = std::acos(speed / track_project::velocity_max); // 计算夹角，弧度，范围[0,pi/2)
-        angle_rad = std::clamp(angle_rad, 1e-4, M_PI / 2.0 - 1e-4);        // 确保夹角在合理范围内
+        // 计算可能的速度方向与视线方向的夹角,abs_doppler不可能为0，此时检测不出来
+        double angle_rad = std::acos(abs_doppler / track_project::velocity_max); // 计算夹角，弧度，范围[0,pi/2)
+        angle_rad = std::clamp(angle_rad, 1e-4, M_PI / 2.0 - 1e-4);              // 确保夹角在合理范围内
 
         double heading1 = base_dir_rad - angle_rad;
         double heading2 = base_dir_rad + angle_rad;
@@ -412,6 +406,9 @@ namespace track_project::trackinit
         std::uint32_t angle_idx_start = static_cast<std::uint32_t>(heading_start * 180.0 / M_PI / HOUGHSLICE_THETA_RESOLUTION_DEG);
         std::uint32_t angle_idx_end = static_cast<std::uint32_t>(heading_end * 180.0 / M_PI / HOUGHSLICE_THETA_RESOLUTION_DEG);
 
+        // 往外扩大一位搜索索引 TODO!这个地方需要详细DEBUG一下
+        angle_idx_end = (angle_idx_end < (HOUGH_THETA_DIM - 2)) ? (angle_idx_end + 2) : HOUGH_THETA_DIM - 1;
+
         // 计算速度索引 - 由宏控制位数
         double ratio = doppler / track_project::velocity_max;
         ratio = std::clamp(ratio, -1.0, 1.0);
@@ -423,7 +420,14 @@ namespace track_project::trackinit
         // 创建掩码缓冲区（按字节存储，小端序）
         std::vector<uint8_t> mask_bytes(BYTES_PER_BATCH, 0);
 
-        // 构造一个批次的速度位的存储布局（连续均匀分布）：
+        // DOPPLER为零的时候不可能被检查出来，以防万一检查一下
+        if (ratio < 1e-6 && ratio > -1e-6)
+        {
+            assert(0);
+            return;
+        }
+
+        // 计算中心位置：构造一个批次的速度位的存储布局（连续均匀分布）：
         // 低半区 (bits 0 到 HOUGHSLICE_DOPPLER_BIT_NUM/2 - 1)：存储负速度（从最大负到最小负）
         //    [bit0: 最大负速度 (-1.0), bit1: 次大负速度 (-0.9), ..., bit31: 最小负速度 (-0.1)]
         // 高半区 (bits HOUGHSLICE_DOPPLER_BIT_NUM/2 到 HOUGHSLICE_DOPPLER_BIT_NUM-1)：存储正速度（从最小正到最大正）
@@ -431,23 +435,16 @@ namespace track_project::trackinit
         //
         // 这样整个速度范围是连续的：-1.0, -0.9, ..., -0.1, +0.1, +0.2, ..., +1.0
         // ratio == 0 的情况：不投票（不可能存在这种点，除非出BUG了）
-        if (ratio == 0)
-        {
-            return;
-        }
-        // 计算中心位位置
         int center_bit_pos = 0;
         if (ratio < 0)
         {
             double abs_ratio = -ratio; // 0.0 ~ 1.0
-            // 希望 abs_ratio=0.1 → bit=31, abs_ratio=1.0 → bit=0
             int level = static_cast<int>(std::floor((1.0 - abs_ratio) * LEVELS_PER_SIDE));
             level = std::clamp(level, 0, static_cast<int>(LEVELS_PER_SIDE) - 1);
-            center_bit_pos = level; // 现在 level=31 for 0.1, level=0 for 1.0
+            center_bit_pos = level;
         }
         else // ratio > 0
         {
-            // 希望 ratio=0.1 → bit=32, ratio=1.0 → bit=63
             int level = static_cast<int>(std::floor((1.0 - ratio) * LEVELS_PER_SIDE));
             level = std::clamp(level, 0, static_cast<int>(LEVELS_PER_SIDE) - 1);
             center_bit_pos = HOUGHSLICE_DOPPLER_BIT_NUM / 2 + (LEVELS_PER_SIDE - 1 - level);
@@ -467,20 +464,22 @@ namespace track_project::trackinit
         // 遍历所有角度索引进行投票
         for (std::uint32_t angle_idx = angle_idx_start; angle_idx < angle_idx_end; ++angle_idx)
         {
-            double theta = angle_idx * HOUGHSLICE_THETA_RESOLUTION_DEG * M_PI / 180.0;
+            double heading = angle_idx * HOUGHSLICE_THETA_RESOLUTION_DEG * M_PI / 180.0;
+            double theta = heading - M_PI / 2;                                                        // arctan(frac{1}{tan(heading)})，反正值一一映射，归一化一下就行了
+            theta = std::fmod(theta + M_PI, M_PI);                                                    // 确保theta在[0, π)范围内
+            int theta_idx = static_cast<int>(theta * 180.0 / M_PI / HOUGHSLICE_THETA_RESOLUTION_DEG); // 默认向下取整
             double rho = rel_x * std::cos(theta) + rel_y * std::sin(theta);
 
             // 计算距离索引
-            int rho_idx = static_cast<int>((rho + 2 * HOUGHSLICE_CLUSTER_RADIUS_KM) / HOUGHSLICE_RHO_RESOLUTION_KM);
+            double value = (rho + HOUGHSLICE_CLUSTER_RADIUS_KM) / HOUGHSLICE_RHO_RESOLUTION_KM;
+            int rho_idx = static_cast<int>(std::round(value)); // 四舍五入，不然检索的时候不能以一般分辨率作为搜索距离了
             if (rho_idx < 0 || rho_idx >= static_cast<int>(HOUGH_RHO_DIM))
             {
                 continue;
             }
 
             // 获取对应的投票单元
-            BitArray<HOUGH_VOTE_BIT_NUM> &cell = (angle_idx >= HOUGH_THETA_DIM)
-                                                     ? vote_area[angle_idx - HOUGH_THETA_DIM][rho_idx]
-                                                     : vote_area[angle_idx][rho_idx];
+            BitArray<HOUGH_VOTE_BIT_NUM> &cell = vote_area[theta_idx][rho_idx]; // 已经归一化了theta和rho，直接索引就行了
 
             // 计算这个批次在总位数中的起始字节偏移
             size_t byte_offset = batch * BYTES_PER_BATCH;
@@ -593,7 +592,7 @@ namespace track_project::trackinit
 
         auto idx_to_rho = [](size_t rho_idx) -> double
         {
-            return rho_idx * HOUGHSLICE_RHO_RESOLUTION_KM - 2 * HOUGHSLICE_CLUSTER_RADIUS_KM;
+            return rho_idx * HOUGHSLICE_RHO_RESOLUTION_KM - HOUGHSLICE_CLUSTER_RADIUS_KM;
         };
 
         // 遍历每个多普勒速度组
@@ -685,6 +684,8 @@ namespace track_project::trackinit
         const double CENTER_X = cluster.center_x;
         const double CENTER_Y = cluster.center_y;
 
+        // 点迹要增加避免重复的逻辑，不能总是靠边界来分辨，设定每个点迹最多允许使用HOUGHSLICE_POINT_REUSE_LIMIT次
+
         for (const auto &line : detected_lines)
         {
             double theta = line[0];
@@ -709,6 +710,7 @@ namespace track_project::trackinit
                     double rel_y = point.y - CENTER_Y;
                     double point_rho = rel_x * cos_theta + rel_y * sin_theta;
 
+                    // 为了弥补多次转换导致的精度损失问题，可能导致航迹拥簇
                     if (std::abs(point_rho - rho) < HOUGHSLICE_RHO_CLUSTER_TOL_KM && std::abs(point.doppler - doppler) < DOPPLER_TOL)
                     {
                         track[batch] = point;

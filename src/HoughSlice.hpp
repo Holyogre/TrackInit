@@ -39,8 +39,8 @@ namespace track_project::trackinit
     private:
         // 航向角离散化参数，由于doppler位的引入，射线方向无意义，仅需"直线与y轴夹角":\alpha、"多普勒速度":doppler即可确定航向
         static constexpr size_t HOUGH_THETA_DIM = 180 / HOUGHSLICE_THETA_RESOLUTION_DEG;
-        // 截距离散化参数，依据聚类判定直径2*1.41*RADIUS近似计算得到
-        static constexpr size_t HOUGH_RHO_DIM = 4 * HOUGHSLICE_CLUSTER_RADIUS_KM / HOUGHSLICE_RHO_RESOLUTION_KM;
+        // 截距离散化参数，搜索空间是圆，所以RHO的极限也是R
+        static constexpr size_t HOUGH_RHO_DIM = 2 * HOUGHSLICE_CLUSTER_RADIUS_KM / HOUGHSLICE_RHO_RESOLUTION_KM;
         // 霍夫变换空间的位数，等于批次数*每批次的速度位数
         static constexpr size_t HOUGH_VOTE_BIT_NUM = HOUGHSLICE_BATCH_NUM * HOUGHSLICE_DOPPLER_BIT_NUM;
 
