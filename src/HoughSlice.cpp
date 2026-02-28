@@ -12,8 +12,17 @@ namespace track_project::trackinit
     // 主程序
     ProcessStatus HoughSlice::process(const std::vector<TrackPoint> &points, std::vector<std::array<TrackPoint, 4>> &new_track)
     {
+        if (points.empty())
+        {
+            LOG_DEBUG << "输入点迹为空，无法处理";
+            return ProcessStatus::SUCCESS; // 没有点迹，这批次数据不处理，不影响后续关联
+        }
+
         // 清空输出航迹
         new_track.clear();
+
+        // 存储时间
+        time_buffer.push(points[0].time);
 
         // ==================== STEP1: 聚类(HOUGHSLICE)生成 ====================
         process_cluster_generation(points);
@@ -291,30 +300,27 @@ namespace track_project::trackinit
         // ==================== 计算 doppler_tolerance_bits ====================
         // 计算时间间隔 dt（秒）：使用 point_list 的第一个和最后一个批次的时间戳
         int doppler_tolerance_bits = 0;
-        if (!it_clust.point_list[0].empty() && !it_clust.point_list[HOUGHSLICE_BATCH_NUM - 1].empty())
+        int64_t t_start = time_buffer[batch].milliseconds;                                      // 当前时刻的时间
+        int64_t t_end = time_buffer[HOUGHSLICE_BATCH_NUM - 1].milliseconds;                     // 最终时间
+        double dt = static_cast<double>(t_end - t_start) / 1000.0 / (HOUGHSLICE_BATCH_NUM - 1); // 转换为秒
+
+        if (dt > 0)
         {
-            int64_t t_start = it_clust.point_list[0][0].time.milliseconds;
-            int64_t t_end = it_clust.point_list[HOUGHSLICE_BATCH_NUM - 1][0].time.milliseconds;
-            double dt = static_cast<double>(t_end - t_start) / 1000.0 / (HOUGHSLICE_BATCH_NUM - 1); // 转换为秒
+            // 计算点迹到雷达的距离（km转m）
+            double distance_m = std::sqrt(point.x * point.x + point.y * point.y) * 1000.0;
 
-            if (dt > 0)
-            {
-                // 计算点迹到雷达的距离（km转m）
-                double distance_m = std::sqrt(point.x * point.x + point.y * point.y) * 1000.0;
+            // 计算航迹在 (BATCH_NUM-1) 个时间间隔内可能移动的最大距离
+            double max_displacement = track_project::velocity_max * dt * (HOUGHSLICE_BATCH_NUM - 1);
 
-                // 计算航迹在 (BATCH_NUM-1) 个时间间隔内可能移动的最大距离
-                double max_displacement = track_project::velocity_max * dt * (HOUGHSLICE_BATCH_NUM - 1);
+            // 计算视线角变化 α = arctan(max_displacement / distance)
+            double alpha = std::atan2(max_displacement, distance_m);
 
-                // 计算视线角变化 α = arctan(max_displacement / distance)
-                double alpha = std::atan2(max_displacement, distance_m);
+            // 计算多普勒速度的极限变化量 Δv = max_velocity * (1 - cos(α))
+            double delta_v = track_project::velocity_max * (1.0 - std::cos(alpha));
 
-                // 计算多普勒速度的极限变化量 Δv = max_velocity * (1 - cos(α))
-                double delta_v = track_project::velocity_max * (1.0 - std::cos(alpha));
-
-                // 转换为位数：doppler_tolerance_bits = round((Δv / velocity_max) * DOPPLER_BIT_NUM) //向上取整
-                doppler_tolerance_bits = static_cast<int>(std::round((delta_v / track_project::velocity_max) * HOUGHSLICE_DOPPLER_BIT_NUM));
-                doppler_tolerance_bits = std::clamp(doppler_tolerance_bits + 1, 1, static_cast<int>(HOUGHSLICE_DOPPLER_BIT_NUM) - 1); 
-            }
+            // 转换为位数：doppler_tolerance_bits = round((Δv / velocity_max) * DOPPLER_BIT_NUM) //向上取整
+            doppler_tolerance_bits = static_cast<int>(std::round((delta_v / track_project::velocity_max) * HOUGHSLICE_DOPPLER_BIT_NUM));
+            doppler_tolerance_bits = std::clamp(doppler_tolerance_bits + 1, 1, static_cast<int>(HOUGHSLICE_DOPPLER_BIT_NUM) - 1);
         }
 
         // 依据doppler和velocity_max计算所有可能的航向角度序列
@@ -681,9 +687,9 @@ namespace track_project::trackinit
     void HoughSlice::process_backtrack_points(const std::vector<std::array<double, 3>> &detected_lines, const Slice &cluster,
                                               std::vector<std::array<TrackPoint, 4>> &new_track)
     {
-        const double DOPPLER_TOL = track_project::velocity_max / HOUGHSLICE_DOPPLER_BIT_NUM; // +-速度分辨率的一半
         const double CENTER_X = cluster.center_x;
         const double CENTER_Y = cluster.center_y;
+        const double DOPPLER_TOL = 2 * track_project::velocity_max / HOUGHSLICE_DOPPLER_BIT_NUM;
 
         // 点迹要增加避免重复的逻辑，不能总是靠边界来分辨，设定每个点迹最多允许使用HOUGHSLICE_POINT_REUSE_LIMIT次
 
@@ -699,6 +705,10 @@ namespace track_project::trackinit
             std::array<TrackPoint, 4> track;
             bool valid = true;
 
+            // sog和cog存储
+            double sog = 0.0;
+            double heading_wrapped = 0.0;
+
             // 对于HOUGHSLICE_BATCH_NUM批次数据，只检查最新的4个批次，依据多普勒速度和距离约束去寻找符合条件的点迹
             for (size_t batch = HOUGHSLICE_BATCH_NUM - 4; batch < HOUGHSLICE_BATCH_NUM && valid; ++batch)
             {
@@ -711,8 +721,24 @@ namespace track_project::trackinit
                     double rel_y = point.y - CENTER_Y;
                     double point_rho = rel_x * cos_theta + rel_y * sin_theta;
 
+                    // 显示角度（归一化成0-PI了！），由点迹位置和航向决定，先计算点迹相对于雷达的方位角，再根据航向和方位角的关系计算显示角度
+                    // 计算SOG
+                    heading_wrapped = fmod(theta + M_PI / 2, M_PI);                       // 垂直加上PI/2
+                    double aspect_angle_rad = std::atan2(rel_y, rel_x) - heading_wrapped; // 用的是最小的夹角，所以这里不用考虑特殊情况
+                    double abs_cos_aspectAngle = std::abs(std::cos(aspect_angle_rad));    // 夹角必然小于90度，所以结果必然是这个
+                    sog = std::abs(doppler) / abs_cos_aspectAngle;                        // 由doppler和夹角计算得到的sog
+
+                    // 由当前批次到最终批次的时间差，计算可能的移动距离
+                    double dt = (time_buffer[HOUGHSLICE_BATCH_NUM - 1].milliseconds - time_buffer[batch].milliseconds) / 1000.0;
+                    double max_displacement = sog * dt;
+                    // 计算视线角变化 α = arctan(max_displacement / distance)
+                    double alpha = std::atan2(max_displacement, hypot(point.x, point.y) * 1000.0); // 距离转换为米
+
+                    // 计算多普勒速度的极限变化量 Δv = max_velocity * (1 - cos(α))
+                    double delta_v = track_project::velocity_max * (1.0 - std::cos(alpha));
+
                     // 为了弥补多次转换导致的精度损失问题，可能导致航迹拥簇
-                    if (std::abs(point_rho - rho) < HOUGHSLICE_RHO_CLUSTER_TOL_KM / 2.0 && std::abs(point.doppler - doppler) < 3 * DOPPLER_TOL)
+                    if (std::abs(point_rho - rho) < HOUGHSLICE_RHO_CLUSTER_TOL_KM && std::abs(point.doppler - doppler) < delta_v + DOPPLER_TOL)
                     {
                         track[batch] = point;
                         found = true;
@@ -729,6 +755,20 @@ namespace track_project::trackinit
 
             if (valid)
             {
+                // 计算COG
+                auto result = unwrapHeadingFromDisplacement(heading_wrapped, track);
+                if (result.first)
+                {
+                    heading_wrapped = result.second;
+                }
+
+                // 赋值
+                for (size_t i = 0; i < track.size(); ++i)
+                {
+                    track[i].cog = heading_wrapped * 180.0 / M_PI; // 转换为度
+                    track[i].sog = sog;
+                }
+
                 new_track.push_back(track);
             }
         }

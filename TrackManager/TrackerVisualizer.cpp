@@ -152,7 +152,7 @@ namespace track_project::trackmanager
 
         // 使用零拷贝只读引用获取头部和数据
         const TrackerHeader *header_ptr = manager.get_header_ref(track_id);
-        const LatestKBuffer<TrackPoint> *data_ptr = manager.get_data_ref(track_id);
+        const track_project::LatestKBuffer<TrackPoint> *data_ptr = manager.get_data_ref(track_id);
 
         if (!header_ptr || !data_ptr)
         {
@@ -291,7 +291,7 @@ namespace track_project::trackmanager
         for (auto track_id : active_ids)
         {
             const track_project::TrackerHeader *header_ptr = manager.get_header_ref(track_id);
-            const LatestKBuffer<track_project::TrackPoint> *data_ptr = manager.get_data_ref(track_id);
+            const track_project::LatestKBuffer<track_project::TrackPoint> *data_ptr = manager.get_data_ref(track_id);
             if (!header_ptr || !data_ptr)
                 continue;
 

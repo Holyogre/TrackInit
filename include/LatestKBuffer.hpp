@@ -21,7 +21,7 @@
 #include <iostream>
 #include <cstring>
 
-namespace track_project::trackmanager
+namespace track_project
 {
 
     template <typename T>
@@ -90,12 +90,14 @@ namespace track_project::trackmanager
         // 定点修改数据
         T &operator[](size_t index) noexcept
         {
+            assert(index < size_ && "LatestKBuffer[]: index out of range! 访问了不存在的索引");
             return buffer_[(tail_ + index) % capacity_];
         }
 
         // 基础参数访问
         const T &operator[](size_t index) const noexcept
         {
+            assert(index < size_ && "LatestKBuffer[]: index out of range! 访问了不存在的索引");
             return buffer_[(tail_ + index) % capacity_];
         }
 
@@ -197,5 +199,5 @@ namespace track_project::trackmanager
             full_ = (head_ == tail_);
         }
     };
-} // namespace track_project::trackmanager
-#endif // _UNIQUE_APPEND_RING_BUFFER_H_
+} // namespace track_project
+#endif // _LATEST_K_BUFFER_HPP_

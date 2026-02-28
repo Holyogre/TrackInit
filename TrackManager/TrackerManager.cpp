@@ -212,7 +212,7 @@ namespace track_project::trackmanager
     }
 
     // 获取id对应的航迹数据只读引用，若不存在返回nullptr
-    const LatestKBuffer<TrackerManager::TrackPoint> *TrackerManager::get_data_ref(std::uint32_t track_id) const
+    const track_project::LatestKBuffer<TrackerManager::TrackPoint> *TrackerManager::get_data_ref(std::uint32_t track_id) const
     {
         auto it = track_id_to_pool_index_.find(track_id);
         if (it == track_id_to_pool_index_.end())

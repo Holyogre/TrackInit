@@ -15,7 +15,10 @@
 峰值检测：O(θ维度 × ρ维度 × 16)
 
 点迹回溯：O(峰值数 × 4 × 平均点迹数)
- * @version 0.2
+ * @version 0.3 我确信霍夫变换在航迹起始根本不好用，别用了，原因：
+ 1. 有SOG的话效果可能还行，DOPPLER根本没法用，近距离处误差太大了
+ 2. 而且启航时间太短了，THETA的分辨率糊成一坨，引入误差之后几乎没法计算，我们不可能容忍这么多关联时间的
+ 3. 航迹回溯的时间复杂度已经接近逻辑法了，还是别用霍夫变换了
  * @date 2025-12-17
  *
  * @copyright Copyright (c) 2025
@@ -28,6 +31,7 @@
 #include "ObjectPool.hpp"
 #include <cstring>
 #include "BitArray.hpp"
+#include "LatestKBuffer.hpp"
 
 namespace track_project::trackinit
 {
@@ -79,10 +83,9 @@ namespace track_project::trackinit
             }
         };
 
-        
     public:
         // 初始状态，预留20个聚类区域
-        HoughSlice() : ClustArea(20) {};
+        HoughSlice() : time_buffer(HOUGHSLICE_BATCH_NUM), ClustArea(20) {};
         virtual ~HoughSlice() noexcept = default;
 
         /*****************************************************************************
@@ -185,8 +188,88 @@ namespace track_project::trackinit
         void process_backtrack_points(const std::vector<std::array<double, 3>> &detected_lines, const Slice &cluster,
                                       std::vector<std::array<TrackPoint, 4>> &new_track);
 
+        /*****************************************************************************
+         * @brief 依据不准确的DX,DY，直线与X轴的某个夹角，来计算航向
+         *
+         * @param line_angle 直线与x轴的夹角，单位弧度，范围[0, π)，由霍夫变换空间的theta索引转换得到
+         * @param points 组成航迹的四个点迹
+         * @return std::pair<bool, double> 是否成功计算航向及真实航向
+         *****************************************************************************/
+        /*****************************************************************************
+         * @brief 依据不准确的DX,DY，直线与X轴的某个夹角，来计算航向
+         *
+         * @param line_angle 直线与x轴的夹角，单位弧度，范围[0, π)，由霍夫变换空间的theta索引转换得到
+         * @param points 组成航迹的四个点迹
+         * @return std::pair<bool, double> 是否成功计算航向及真实航向
+         *****************************************************************************/
+        inline std::pair<bool, double> unwrapHeadingFromDisplacement(double line_angle, const std::array<TrackPoint, 4> &points) const
+        {
+            // 用位移向量估算真实航向
+            double dx = points[3].x - points[0].x;
+            double dy = points[3].y - points[0].y;
+
+            // 处理位移为零的情况
+            const double EPS = 1e-10;
+            if (std::abs(dx) < EPS && std::abs(dy) < EPS)
+            {
+                return {false, 0.0};
+            }
+
+            // line_angle 是直线方向 [0, π)，真实航向要么是它，要么是它 + π
+            double candidate1 = line_angle;        // [0, π)
+            double candidate2 = line_angle + M_PI; // [π, 2π)
+            if (candidate2 >= 2 * M_PI)
+                candidate2 -= 2 * M_PI;
+
+            // 用位移的象限做粗粒度判断（抗噪声）
+            bool moving_right = dx > 0;
+            bool moving_up = dy > 0;
+
+            // 根据运动方向选择候选
+            double heading_true;
+
+            if (moving_right && moving_up)
+            { // 第一象限：目标朝右上
+                // 真实航向应该在 0~90° 之间
+                heading_true = (candidate1 <= M_PI / 2) ? candidate1 : candidate2;
+            }
+            else if (!moving_right && moving_up)
+            { // 第二象限：左上
+                // 真实航向应该在 90~180° 之间
+                heading_true = (candidate1 > M_PI / 2 && candidate1 < M_PI) ? candidate1 : candidate2;
+                // 确保结果在 90~180°
+                if (heading_true < M_PI / 2)
+                    heading_true += M_PI;
+            }
+            else if (!moving_right && !moving_up)
+            { // 第三象限：左下
+                // 真实航向应该在 180~270° 之间
+                heading_true = (candidate1 > M_PI) ? candidate1 : candidate2;
+                // 确保结果在 180~270°
+                if (heading_true < M_PI)
+                    heading_true += M_PI;
+            }
+            else
+            { // 第四象限：右下 (moving_right && !moving_up)
+                // 真实航向应该在 270~360° 之间
+                heading_true = (candidate1 > 3 * M_PI / 2) ? candidate1 : candidate2;
+                // 确保结果在 270~360°
+                if (heading_true < 3 * M_PI / 2)
+                    heading_true += M_PI;
+            }
+
+            // 归一化到 [0, 2π)
+            heading_true = std::fmod(heading_true, 2 * M_PI);
+            if (heading_true < 0)
+                heading_true += 2 * M_PI;
+
+            return {true, heading_true};
+        }
+
     private:
         ObjectPool<Slice> ClustArea;
+
+        track_project::LatestKBuffer<track_project::Timestamp> time_buffer; // 时间戳缓冲区，存储每批次数据的时间戳
     };
 }
 

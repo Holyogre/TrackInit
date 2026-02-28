@@ -60,6 +60,53 @@ void point_update_cv(TrackPoint &p, double time_interval_s)
     p.time.milliseconds += static_cast<int64_t>(time_interval_s * 1000);
 }
 
+// 带噪声的外推函数
+void point_update_cv_with_noise(
+    TrackPoint &p,
+    double time_interval_s,
+    unsigned seed,
+    double pos_noise_sigma_km = 0.0,  // 位置噪声标准差 (km)，默认10米
+    double doppler_noise_sigma = 0.8) // 多普勒噪声标准差 (m/s)
+{
+    // 用seed创建随机数生成器
+    std::mt19937 gen(seed);
+    std::normal_distribution<> gauss{0.0, 1.0};
+
+    // 保存原始速度
+    double vx_orig = p.vx;
+    double vy_orig = p.vy;
+
+    // 更新位置（先不加噪声，保持运动模型纯净）
+    p.x += p.vx * time_interval_s / 1000.0;
+    p.y += p.vy * time_interval_s / 1000.0;
+
+    // 加位置测量噪声
+    p.x += gauss(gen) * pos_noise_sigma_km;
+    p.y += gauss(gen) * pos_noise_sigma_km;
+
+    // 更新DOPPLER（基于真实速度）
+    double range = std::sqrt(p.x * p.x + p.y * p.y);
+    if (range > 1e-6)
+    {
+        double los_x = -p.x / range;
+        double los_y = -p.y / range;
+        p.doppler = p.vx * los_x + p.vy * los_y;
+
+        // 加多普勒测量噪声
+        p.doppler += gauss(gen) * doppler_noise_sigma;
+    }
+
+    // 恢复速度（如果不希望速度被改变）
+    p.vx = vx_orig;
+    p.vy = vy_orig;
+
+    // 更新经纬度
+    sync_lon_lat(p);
+
+    // 更新时间戳
+    p.time.milliseconds += static_cast<int64_t>(time_interval_s * 1000);
+}
+
 // ——————————————————————————————————点迹生成函数————————————————————————————————//
 /*****************************************************************************
  * @brief 用于生成符合点迹生成参数的均匀分布的点迹群

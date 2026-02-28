@@ -42,7 +42,7 @@ namespace track_project::trackmanager
         {
             TrackerHeader header; // 内存连续且平凡
 
-            LatestKBuffer<TrackPoint> data;
+            track_project::LatestKBuffer<TrackPoint> data;
 
             TrackerContainer(std::uint32_t point_size) : data(point_size) {}
 
@@ -127,7 +127,7 @@ namespace track_project::trackmanager
          * 返回类型为 `const LatestKBuffer<TrackPoint>*`，允许外部直接按索引访问而不拷贝。
          * 注意生命周期：引用在对应航迹被删除或写改前有效。
          *****************************************************************************/
-        const LatestKBuffer<TrackPoint> *get_data_ref(std::uint32_t track_id) const;
+        const track_project::LatestKBuffer<TrackPoint> *get_data_ref(std::uint32_t track_id) const;
 
         // 统计信息
         size_t get_total_capacity() const { return buffer_pool_.size(); }
