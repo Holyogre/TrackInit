@@ -9,12 +9,12 @@ namespace track_project::trackinit
     constexpr int HOUGHSLICE_MAX_POINTS_PER_CLUSTER = 4;     // 每个聚类中最多可以拥有的点迹数量
     constexpr int HOUGHSLICE_MIN_POINTS_PER_CORE = 3;        // 每个核心点最少需要拥有的点迹数量
     // ============ HOUGHSLICE 霍夫变换参数 ============
-    constexpr double HOUGHSLICE_THETA_RESOLUTION_DEG = 0.1;  // 霍夫角度分辨率（度）,得是180的公因数
+    constexpr double HOUGHSLICE_THETA_RESOLUTION_DEG = 1.0;  // 霍夫角度分辨率（度）,得是180的公因数
     constexpr double HOUGHSLICE_RHO_RESOLUTION_KM = 0.1;     // 霍夫距离分辨率（公里）
-    constexpr size_t HOUGHSLICE_DOPPLER_BIT_NUM = 64;        // 霍夫变换中多普勒速度位数，必须是32的整数倍
+    constexpr size_t HOUGHSLICE_DOPPLER_BIT_NUM = 128;        // 霍夫变换中多普勒速度位数，必须是32的整数倍
     constexpr size_t HOUGHSLICE_BATCH_NUM = 4;               // 批次数量，必须大于等于4,不然不能回溯四批次数据
     constexpr size_t HOUGHSLICE_THETA_CLUSTER_TOL_DEG = 5.0; // 霍夫空间中检测到的直线参数凝聚时的角度阈值（度），必须可以被角度分辨率整除
-    constexpr double HOUGHSLICE_RHO_CLUSTER_TOL_KM = 1.0;    // 霍夫空间中检测到的直线参数凝聚时的距离阈值（公里），必须可以被距离分辨率整除
+    constexpr double HOUGHSLICE_RHO_CLUSTER_TOL_KM = 0.5;    // 霍夫空间中检测到的直线参数凝聚时的距离阈值（公里），必须可以被距离分辨率整除
     constexpr size_t HOUGHSLICE_POINT_REUSE_LIMIT = 2;       // 点迹使用限制，每个点迹最多只能被使用两次，避免过度重复利用边界点迹导致的虚假航迹生成 TODO
 
     /*****************************************************************************

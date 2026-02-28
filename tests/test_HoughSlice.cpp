@@ -65,32 +65,17 @@ TEST_CASE("功能测试", "[FunctionalityCheck]")
 
     // 生成高斯分布的点迹
     auto points = generate_gaussian_points(10, 0,
-                                           0, 10,
-                                           0, 10,
+                                           150, 10,
+                                           150, 10,
                                            100.0, 50.0,
                                            seed);
     std::vector<std::array<TrackPoint, 4>> new_tracks;
-
-    // 存储new_tracks为txt文件，只要sog,x0,y0三个值
-    std::ofstream ofs("new_tracks.txt");
-    ofs << "sog,x0,y0\n"; // 写入表头
-    for (const auto &track : new_tracks)
-    {
-        const auto &p = track[0]; // 只写入每条航迹的第一个点
-        ofs << p.sog << "," << p.x << "," << p.y << "\n";
-    }
-    ofs.close();
-
-    // //debug测试
-    // auto point=points[1];
-    // points.clear();
-    // points.push_back(point);
 
     // 创建HoughSlice对象
     HoughSlice alg;
 
     // 创建航迹管理器
-    track_project::ManagementService track_manager(-0.5, 0.5, -0.5, 0.5); // 经纬度范围
+    track_project::ManagementService track_manager(1.10, 1.5, 1.2, 1.5); // 经纬度范围
 
     // 绑定回调函数，显示航迹
     alg.set_track_callback([&track_manager](const std::vector<std::array<TrackPoint, 4>> &tracks)
@@ -109,7 +94,7 @@ TEST_CASE("功能测试", "[FunctionalityCheck]")
     // 更新点迹位置
     for (auto &p : points)
     {
-        point_update(p, TIME_INTERVAL_S);
+        point_update_cv(p, TIME_INTERVAL_S);
         LOG_INFO << "第一次更新后点迹位置：" << p;
     }
     track_manager.draw_point_command(points); // 绘制点迹
@@ -118,7 +103,7 @@ TEST_CASE("功能测试", "[FunctionalityCheck]")
     // 第三次更新和第二次本质上是一样的，所以其实没必要继续更新了
     for (auto &p : points)
     {
-        point_update(p, TIME_INTERVAL_S);
+        point_update_cv(p, TIME_INTERVAL_S);
         LOG_INFO << "第二次更新后点迹位置：" << p;
     }
     track_manager.draw_point_command(points); // 绘制点迹
@@ -127,7 +112,7 @@ TEST_CASE("功能测试", "[FunctionalityCheck]")
     // 第四次更新的时候可能会发送数据，作benchmark
     for (auto &p : points)
     {
-        point_update(p, TIME_INTERVAL_S);
+        point_update_cv(p, TIME_INTERVAL_S);
         LOG_INFO << "第三次更新后点迹位置：" << p;
     }
     track_manager.draw_point_command(points); // 绘制点迹

@@ -173,8 +173,8 @@ namespace track_project::trackinit
                     // 反推直线的参数，y= -x * (cos(theta)/sin(theta)) + rho/sin(theta)，斜率k=-cos(theta)/sin(theta)，截距b=rho/sin(theta)
                     double k = -std::cos(line[0]) / std::sin(line[0]);
                     double cog_deg = fmod((90.0 - std::atan(k) * 180.0 / M_PI) + 360.0, 180.0); // 受限于theta
-                    LOG_DEBUG << "直线[" << i << "]: theta=" << line[0] * 180.0 / M_PI << ", b=" << line[1] / std::sin(line[0])
-                              << ", cog=" << cog_deg << ", rho" << line[1];
+                    LOG_DEBUG << "直线[" << i << "]: theta=" << line[0] * 180.0 / M_PI << ", rho=" << line[1]
+                              << ", cog=" << cog_deg << ", b=" << line[1] / std::sin(line[0]);
                 }
             }
 
@@ -311,9 +311,9 @@ namespace track_project::trackinit
                 // 计算多普勒速度的极限变化量 Δv = max_velocity * (1 - cos(α))
                 double delta_v = track_project::velocity_max * (1.0 - std::cos(alpha));
 
-                // 转换为位数：doppler_tolerance_bits = round((Δv / velocity_max) * DOPPLER_BIT_NUM)
+                // 转换为位数：doppler_tolerance_bits = round((Δv / velocity_max) * DOPPLER_BIT_NUM) //向上取整
                 doppler_tolerance_bits = static_cast<int>(std::round((delta_v / track_project::velocity_max) * HOUGHSLICE_DOPPLER_BIT_NUM));
-                doppler_tolerance_bits = std::clamp(doppler_tolerance_bits, 0, static_cast<int>(HOUGHSLICE_DOPPLER_BIT_NUM) - 1);
+                doppler_tolerance_bits = std::clamp(doppler_tolerance_bits + 1, 1, static_cast<int>(HOUGHSLICE_DOPPLER_BIT_NUM) - 1); 
             }
         }
 
@@ -351,49 +351,50 @@ namespace track_project::trackinit
         double heading1 = base_dir_rad - angle_rad;
         double heading2 = base_dir_rad + angle_rad;
 
-        //  所有heading区间归一化为0-pi的连续区间，;heading1和heading2的绝对值差不可能超过180度，射线方向性由DOPPLER保证
-        if (heading1 <= 0) // 仅有可能heading1小于0，此时heading2必然小于pi
-        {
-            double heading3 = 0.0, heading4 = M_PI;
-            heading3 = heading1 + M_PI;
-            heading4 = M_PI;
-            heading1 = 0.0;
-            heading2 = heading2;
-            vote_in_hough_space(heading1, heading2, point.doppler, rel_x, rel_y, batch, doppler_tolerance_bits, it_clust.vote_area);
-            vote_in_hough_space(heading3, heading4, point.doppler, rel_x, rel_y, batch, doppler_tolerance_bits, it_clust.vote_area);
-        }
-        else if (heading2 >= 2 * M_PI) // 仅有可能heading2大于2π,此时heading1必然大于π
-        {
-            double heading3 = 0.0, heading4 = M_PI;
-            // 射线方向性可以由doppler确定，由angle_rad保证heading3必然位于(π,2π)，故区间为(0,heading2-2π)∪(heading1-π,π)
-            heading3 = heading1 - M_PI;
-            heading4 = M_PI;
-            heading1 = 0.0;
-            heading2 = heading2 - 2 * M_PI;
-            vote_in_hough_space(heading1, heading2, point.doppler, rel_x, rel_y, batch, doppler_tolerance_bits, it_clust.vote_area);
-            vote_in_hough_space(heading3, heading4, point.doppler, rel_x, rel_y, batch, doppler_tolerance_bits, it_clust.vote_area);
-        }
-        else if (heading1 <= M_PI && heading2 <= M_PI) // 正常情况，区间为(heading1,heading2)
-        {
-            vote_in_hough_space(heading1, heading2, point.doppler, rel_x, rel_y, batch, doppler_tolerance_bits, it_clust.vote_area);
-        }
-        else if (heading1 <= M_PI && heading2 > M_PI) // 可能存在heading1<π<heading2的情况，此时区间为(0,heading2-π)∪(heading1+π,2π)
-        {
-            double heading3 = heading1;
-            double heading4 = M_PI;
-            heading1 = 0.0;
-            heading2 = heading2 - M_PI;
-            vote_in_hough_space(heading1, heading2, point.doppler, rel_x, rel_y, batch, doppler_tolerance_bits, it_clust.vote_area);
-            vote_in_hough_space(heading3, heading4, point.doppler, rel_x, rel_y, batch, doppler_tolerance_bits, it_clust.vote_area);
-        }
-        else if (heading1 > M_PI && heading2 < 2 * M_PI) // 可能存在heading1>heading2>pi的情况，此时区间为(heading1-π,heading2-π)
-        {
-            vote_in_hough_space(heading1 - M_PI, heading2 - M_PI, point.doppler, rel_x, rel_y, batch, doppler_tolerance_bits, it_clust.vote_area);
-        }
-        else
-        {
-            assert(0); // 不可能存在其他情况了，除非出BUG了（经参数扫描测试和边界测试确认不存在额外情况）
-        }
+        vote_in_hough_space(0, M_PI, point.doppler, rel_x, rel_y, batch, doppler_tolerance_bits, it_clust.vote_area); // debug
+        // //  所有heading区间归一化为0-pi的连续区间，;heading1和heading2的绝对值差不可能超过180度，射线方向性由DOPPLER保证
+        // if (heading1 <= 0) // 仅有可能heading1小于0，此时heading2必然小于pi
+        // {
+        //     double heading3 = 0.0, heading4 = M_PI;
+        //     heading3 = heading1 + M_PI;
+        //     heading4 = M_PI;
+        //     heading1 = 0.0;
+        //     heading2 = heading2;
+        //     vote_in_hough_space(heading1, heading2, point.doppler, rel_x, rel_y, batch, doppler_tolerance_bits, it_clust.vote_area);
+        //     vote_in_hough_space(heading3, heading4, point.doppler, rel_x, rel_y, batch, doppler_tolerance_bits, it_clust.vote_area);
+        // }
+        // else if (heading2 >= 2 * M_PI) // 仅有可能heading2大于2π,此时heading1必然大于π
+        // {
+        //     double heading3 = 0.0, heading4 = M_PI;
+        //     // 射线方向性可以由doppler确定，由angle_rad保证heading3必然位于(π,2π)，故区间为(0,heading2-2π)∪(heading1-π,π)
+        //     heading3 = heading1 - M_PI;
+        //     heading4 = M_PI;
+        //     heading1 = 0.0;
+        //     heading2 = heading2 - 2 * M_PI;
+        //     vote_in_hough_space(heading1, heading2, point.doppler, rel_x, rel_y, batch, doppler_tolerance_bits, it_clust.vote_area);
+        //     vote_in_hough_space(heading3, heading4, point.doppler, rel_x, rel_y, batch, doppler_tolerance_bits, it_clust.vote_area);
+        // }
+        // else if (heading1 <= M_PI && heading2 <= M_PI) // 正常情况，区间为(heading1,heading2)
+        // {
+        //     vote_in_hough_space(heading1, heading2, point.doppler, rel_x, rel_y, batch, doppler_tolerance_bits, it_clust.vote_area);
+        // }
+        // else if (heading1 <= M_PI && heading2 > M_PI) // 可能存在heading1<π<heading2的情况，此时区间为(0,heading2-π)∪(heading1+π,2π)
+        // {
+        //     double heading3 = heading1;
+        //     double heading4 = M_PI;
+        //     heading1 = 0.0;
+        //     heading2 = heading2 - M_PI;
+        //     vote_in_hough_space(heading1, heading2, point.doppler, rel_x, rel_y, batch, doppler_tolerance_bits, it_clust.vote_area);
+        //     vote_in_hough_space(heading3, heading4, point.doppler, rel_x, rel_y, batch, doppler_tolerance_bits, it_clust.vote_area);
+        // }
+        // else if (heading1 > M_PI && heading2 < 2 * M_PI) // 可能存在heading1>heading2>pi的情况，此时区间为(heading1-π,heading2-π)
+        // {
+        //     vote_in_hough_space(heading1 - M_PI, heading2 - M_PI, point.doppler, rel_x, rel_y, batch, doppler_tolerance_bits, it_clust.vote_area);
+        // }
+        // else
+        // {
+        //     assert(0); // 不可能存在其他情况了，除非出BUG了（经参数扫描测试和边界测试确认不存在额外情况）
+        // }
     }
 
     // 对于霍夫变换空间中的指定区间进行特殊投票
@@ -406,7 +407,7 @@ namespace track_project::trackinit
         std::uint32_t angle_idx_start = static_cast<std::uint32_t>(heading_start * 180.0 / M_PI / HOUGHSLICE_THETA_RESOLUTION_DEG);
         std::uint32_t angle_idx_end = static_cast<std::uint32_t>(heading_end * 180.0 / M_PI / HOUGHSLICE_THETA_RESOLUTION_DEG);
 
-        // 往外扩大一位搜索索引 TODO!这个地方需要详细DEBUG一下
+        // 往外扩大一位搜索索引
         angle_idx_end = (angle_idx_end < (HOUGH_THETA_DIM - 2)) ? (angle_idx_end + 2) : HOUGH_THETA_DIM - 1;
 
         // 计算速度索引 - 由宏控制位数
@@ -711,7 +712,7 @@ namespace track_project::trackinit
                     double point_rho = rel_x * cos_theta + rel_y * sin_theta;
 
                     // 为了弥补多次转换导致的精度损失问题，可能导致航迹拥簇
-                    if (std::abs(point_rho - rho) < HOUGHSLICE_RHO_CLUSTER_TOL_KM && std::abs(point.doppler - doppler) < DOPPLER_TOL)
+                    if (std::abs(point_rho - rho) < HOUGHSLICE_RHO_CLUSTER_TOL_KM / 2.0 && std::abs(point.doppler - doppler) < 3 * DOPPLER_TOL)
                     {
                         track[batch] = point;
                         found = true;

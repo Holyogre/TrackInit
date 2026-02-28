@@ -38,11 +38,20 @@ void sync_lon_lat(TrackPoint &p)
 }
 
 // ——————————————————————————————————外推函数————————————————————————————————//
-void point_update(TrackPoint &p, double time_interval_s)
+void point_update_cv(TrackPoint &p, double time_interval_s)
 {
     // 更新位置
     p.x += p.vx * time_interval_s / 1000.0; // vx单位m/s，转换为km
     p.y += p.vy * time_interval_s / 1000.0;
+
+    // 更新DOPPLER
+    double range = std::sqrt(p.x * p.x + p.y * p.y);
+    if (range > 1e-6)
+    {
+        double los_x = -p.x / range;
+        double los_y = -p.y / range;
+        p.doppler = p.vx * los_x + p.vy * los_y;
+    }
 
     // 更新经纬度
     sync_lon_lat(p);

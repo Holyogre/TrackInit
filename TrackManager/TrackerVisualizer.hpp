@@ -90,7 +90,8 @@ namespace track_project::trackmanager
     private:
         // 画布参数
         cv::Mat img;                               // 画布
-        cv::Mat bg_img;                            // 背景图像，存储点迹
+        cv::Mat pt_img;                            // 点迹图像，存储点迹
+        cv::Mat bg_img;                            // 背景图像，存储带经纬度的背景
         double lon_min, lon_max, lat_min, lat_max; // 经纬度范围
         std::uint32_t height, width;               // 画布高度和宽度
 

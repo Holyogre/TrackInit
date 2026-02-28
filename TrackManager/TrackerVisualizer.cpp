@@ -10,12 +10,47 @@ namespace track_project::trackmanager
                                          double lat_min, double lat_max,
                                          std::uint32_t track_size, std::uint32_t track_length)
         : img(1440, 2560, CV_8UC3, cv::Scalar(255, 255, 255)),    // 彩色RGB画布，背景是白色
-          bg_img(1440, 2560, CV_8UC3, cv::Scalar(255, 255, 255)), // 彩色RGB画布，背景是白色，存储背景
+          pt_img(1440, 2560, CV_8UC3, cv::Scalar(255, 255, 255)), // 彩色RGB画布，背景是白色，存储点迹
+          bg_img(1440, 2560, CV_8UC3, cv::Scalar(255, 255, 255)), // 彩色RGB画布，带经纬度的背景（白色带坐标）
           lon_min(lon_min), lon_max(lon_max),
           lat_min(lat_min), lat_max(lat_max)
     {
         height = img.rows;
         width = img.cols;
+
+        // 初始化背景画布（白色）
+        bg_img = cv::Mat(height, width, CV_8UC3, cv::Scalar(255, 255, 255));
+
+        // 绘制坐标网格和标签
+        int font = cv::FONT_HERSHEY_SIMPLEX;
+        double font_scale = 1.0;
+        cv::Scalar grid_color(200, 200, 200);
+        cv::Scalar text_color(0, 0, 0);
+
+        // 画网格线（10条）
+        for (int i = 1; i <= 10; i++)
+        {
+            double ratio = i / 10.0;
+
+            // 经度线（竖线）
+            int x = static_cast<int>(ratio * width);
+            cv::line(bg_img, cv::Point(x, 0), cv::Point(x, height), grid_color, 1);
+
+            // 经度标签
+            double lon = lon_min + ratio * (lon_max - lon_min);
+            cv::putText(bg_img, cv::format("%.2f", lon),
+                        cv::Point(x + 2, height - 30), font, font_scale, text_color, 1);
+
+            // 纬度线（横线）
+            int y = static_cast<int>(ratio * height);
+            cv::line(bg_img, cv::Point(0, y), cv::Point(width, y), grid_color, 1);
+
+            // 纬度标签
+            double lat = lat_max - ratio * (lat_max - lat_min);
+            cv::putText(bg_img, cv::format("%.2f", lat),
+                        cv::Point(5, y - 2), font, font_scale, text_color, 1);
+        }
+
         active_track_ids.reserve(track_size);
         track_points.reserve(track_length);
 
@@ -27,7 +62,7 @@ namespace track_project::trackmanager
 
     void TrackerVisualizer::draw_track(const TrackerManager &manager)
     {
-        bg_img.copyTo(img); // 显示点迹结果
+        pt_img.copyTo(img); // 显示点迹结果
 
         // 使用公开只读接口获取活跃航迹ID
         active_track_ids = manager.get_active_track_ids();
@@ -43,8 +78,9 @@ namespace track_project::trackmanager
 
     void TrackerVisualizer::draw_point_cloud(std::vector<TrackPoint> x)
     {
-        // 重置背景为白色
-        bg_img.setTo(cv::Scalar(255, 255, 255));
+        // 重置背景为经纬度
+        bg_img.copyTo(pt_img); // 显示背景
+        // pt_img.setTo(cv::Scalar(255, 255, 255));
 
         if (x.empty())
         {
@@ -83,7 +119,7 @@ namespace track_project::trackmanager
             }
 
             // 在背景图像上绘制点迹（使用小圆点）
-            cv::circle(bg_img, img_point, 3, point_color, -1); // 半径为3的实心圆
+            cv::circle(pt_img, img_point, 3, point_color, -1); // 半径为3的实心圆
         }
     }
 

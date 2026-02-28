@@ -79,6 +79,7 @@ namespace track_project::trackinit
             }
         };
 
+        
     public:
         // 初始状态，预留20个聚类区域
         HoughSlice() : ClustArea(20) {};
