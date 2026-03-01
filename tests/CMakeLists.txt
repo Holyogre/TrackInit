@@ -69,5 +69,5 @@ add_track_test(test_HoughSlice
 # add_test(NAME testObjectPool功能测试 COMMAND testObjectPool "[memory_pool][]")
 # add_test(NAME ClustDBSCAN COMMAND test_ClustDBSCAN "[dbscan][]")
 # add_test(NAME bitARRAY全面测试 COMMAND test_BitArray "[bitarray][]")
-add_test(NAME HoughSlice功能测试 COMMAND test_HoughSlice "[Benchmark]")
+add_test(NAME HoughSlice功能测试 COMMAND test_HoughSlice "[FunctionalityCheck][]")
 

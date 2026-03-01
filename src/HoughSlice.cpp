@@ -689,7 +689,7 @@ namespace track_project::trackinit
     {
         const double CENTER_X = cluster.center_x;
         const double CENTER_Y = cluster.center_y;
-        const double DOPPLER_TOL = 2 * track_project::velocity_max / HOUGHSLICE_DOPPLER_BIT_NUM;
+        const double DOPPLER_TOL = 2 * track_project::velocity_max / HOUGHSLICE_DOPPLER_BIT_NUM; 
 
         // 点迹要增加避免重复的逻辑，不能总是靠边界来分辨，设定每个点迹最多允许使用HOUGHSLICE_POINT_REUSE_LIMIT次
 
@@ -762,12 +762,7 @@ namespace track_project::trackinit
                     heading_wrapped = result.second;
                 }
 
-                // 赋值
-                for (size_t i = 0; i < track.size(); ++i)
-                {
-                    track[i].cog = heading_wrapped * 180.0 / M_PI; // 转换为度
-                    track[i].sog = sog;
-                }
+                // 赋值 TODO SOG和COG的计算可能存在BUG，以后想起来这个算法再改动吧，我个人觉得效果不是很好
 
                 new_track.push_back(track);
             }
@@ -777,5 +772,6 @@ namespace track_project::trackinit
     void HoughSlice::clear_all()
     {
         ClustArea.clear_all();
+        time_buffer.clear();
     }
 } // namespace track_project::trackinit

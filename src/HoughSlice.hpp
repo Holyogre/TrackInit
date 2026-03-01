@@ -27,9 +27,10 @@
 #ifndef _HOUGH_SLICE_HPP_
 #define _HOUGH_SLICE_HPP_
 
+#include <cstring>
+
 #include "TrackInitBase.hpp"
 #include "ObjectPool.hpp"
-#include <cstring>
 #include "BitArray.hpp"
 #include "LatestKBuffer.hpp"
 
@@ -188,13 +189,6 @@ namespace track_project::trackinit
         void process_backtrack_points(const std::vector<std::array<double, 3>> &detected_lines, const Slice &cluster,
                                       std::vector<std::array<TrackPoint, 4>> &new_track);
 
-        /*****************************************************************************
-         * @brief 依据不准确的DX,DY，直线与X轴的某个夹角，来计算航向
-         *
-         * @param line_angle 直线与x轴的夹角，单位弧度，范围[0, π)，由霍夫变换空间的theta索引转换得到
-         * @param points 组成航迹的四个点迹
-         * @return std::pair<bool, double> 是否成功计算航向及真实航向
-         *****************************************************************************/
         /*****************************************************************************
          * @brief 依据不准确的DX,DY，直线与X轴的某个夹角，来计算航向
          *
