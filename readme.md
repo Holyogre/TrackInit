@@ -303,5 +303,25 @@
 ## 2026-03-01
 1. **HoughSlice算法衔接论文，写了一个总结**
 2. 逻辑法建了一个HPP文件，一会吃饭后写具体实现
+3. **LogicBasedTracker 核心设计完成**
+   - 设计了一个基于四帧滑动窗口和多假设跟踪(MHT)思想的航迹初始化算法
+   - 采用四层结构：point_batches_存储点迹观测，hypothesis_tree_存储假设节点，始终保持[0]为最新帧
+   - 定义了HypothesisNode结构体，包含航向假设(heading)、径向速度范围(vr_min/vr_max)、节点深度(depth 0-3)、关联点迹指针(obs)和父节点指针(ancestor)
+   - 处理流程
+      - 第一帧：无历史匹配，每个点迹生成 depth=0 的根节点，初始化多普勒预测范围
+      - 第二/三帧：新点迹遍历上一帧节点，通过距离门限和多普勒门限匹配，生成 depth 递增的子节点
+      - 第四帧：关键修正——depth=2 的节点匹配成功后不生成 depth=3 节点，而是直接进入航迹输出流程
+      - 每帧处理完成后执行滑动窗口右移，清空最旧层数据
+      - 航迹输出流程：回溯点迹，依据近似静止目标和运动目标两种情况计算航向和速度，输出航迹信息
+         - 近似静止目标：当四帧多普勒累积位移 |doppler| * dt_total < sigma_dis 时，航向垂直于视线方向，速度取多普勒绝对值
+         - 运动目标：否则用 SVD 拟合直线得到航向，结合多普勒解算真实速度
+      - 关键技术参数
+         - 距离门限：MAX_VELOCITY * Δt + sigma_dis + dis_tolerance，其中 sigma_dis 网格化在线标定
+         - 多普勒预测：以靠近雷达站运动的目标为例，·一个x,y往heading方向移动的点迹，如果HEADING不巧是沿着垂直于视线方向移动的话，他的doppler会剧烈变动，HEADING最接近垂直于视线方向的时候一定是我们假设他是MAX_VELOCITY的时候（固定值），此时我们依据TIME_1和TIME_0计算出最大移动距离，如果这个移动距离小于hypot(x,y)cos(aspectAngle)，那么DOPPLER_MIN就是0，不然则依据最大移动距离后的点计算DOPPLER_MIN，DOPPLER_MAX就是他自己
+      - 后处理聚类：当单网格内假设过多时，对航向和速度聚类，取最稠密 K 个簇输出
+4. **TODO/明日计划**
+   - 需要一个固定大小，不扩容的对象池来存储HypothesisNode，支持快速分配和回收，
+   - python的svd分解转换成CPP
+   - 首要：实现一个基础的假设构建函数extend_hypotheses，实现一到四帧的假设推演，当depth=3的目标将要出现时，取消出现，调用output_hypotheses判断航迹是否满足条件，输出为正式航迹
 
 

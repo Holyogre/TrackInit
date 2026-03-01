@@ -31,8 +31,12 @@ namespace track_project::trackinit
         TOO_MANY_CLUSTER = 1002,     // 聚类数量过多，可以更换成其他算法
         TOO_LARGE_CLUSTER = 1003,    // 过大的聚类区域，群目标存在丢失情况，考虑更换参数
 
+        // 逻辑法状态码
+        NO_HYPOTHESIS = 2001,  // 没有生成任何假设
+        TOO_FEW_POINTS = 2002, // 有假设被删除了，因为点迹过多装不下
+
         // 其他
-        NO_POINT = 2001, // 没有点迹，无法处理
+        NO_POINT = 9001, // 没有点迹，无法处理
         //  VELOCITY_OUT_OF_RANGE, // 速度约束不满足
         //  ACCELERATION_TOO_HIGH, // 机动性太强
         //  LOW_CONFIDENCE,        // 置信度过低
