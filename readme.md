@@ -324,4 +324,6 @@
    - python的svd分解转换成CPP
    - 首要：实现一个基础的假设构建函数extend_hypotheses，实现一到四帧的假设推演，当depth=3的目标将要出现时，取消出现，调用output_hypotheses判断航迹是否满足条件，输出为正式航迹
 
-
+### 2026-03-02
+1. **LogicBasedTracker核心功能实现**
+   - 选取x,y作为hypothesis的索引，因为theta和r需要引入sog_cog来确定搜索范围，x,y则不需要
