@@ -324,6 +324,17 @@
    - python的svd分解转换成CPP
    - 首要：实现一个基础的假设构建函数extend_hypotheses，实现一到四帧的假设推演，当depth=3的目标将要出现时，取消出现，调用output_hypotheses判断航迹是否满足条件，输出为正式航迹
 
-### 2026-03-02
+### 2026-03-02 至 2026-03-13
 1. **LogicBasedTracker核心功能实现**
+   - 基础逻辑：拆分为hypothesis索引，hypothesis推导，和航迹质量判断两个核心部分
+   - 部分完成了hypothesis索引的实现，找到了波门大小，缺少依据DOPPLER反推可能的波门的步骤，我标记了TODO，
    - 选取x,y作为hypothesis的索引，因为theta和r需要引入sog_cog来确定搜索范围，x,y则不需要
+   - 引入第二章准备计算的偏差和方差，从而优化假设索引的范围）（感觉可能还是得进一步扩大，之后再试试）
+2. **LogicBasedTracker误差分布函数初始化实现**
+   - 依据基础的THETA,RHO误差分布函数，结合SOG/COG的误差分布，计算出x,y的误差分布函数
+   - 通过网格化的方式，计算出不同x,y位置的误差分布函数，存储在二维数组中。使用DAT文件测试，用MATLAB验证了误差分布函数的正确性
+   - 验证下SIGMA_X,SIGMA_Y的分布为啥仅与一个变量有关
+3. **TODO / 明日计划**
+   - 继续完善hypothesis索引的实现，增加DOPPLER反推可能的波门的步骤，我标记了TODO
+   - 实现hypothesis推导函数extend_hypotheses，实现一到四帧的假设推演，尤其是需要引入DOPPLER来进行减枝，此外当depth=3的目标将要出现时，取消出现，调用output_hypotheses判断航迹是否满足条件，输出为正式航迹
+   - 进一步调整hypothesis索引的波门大小，确保能够覆盖合理范围的点迹，同时避免过多无效假设的生成

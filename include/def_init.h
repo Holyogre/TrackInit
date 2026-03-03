@@ -16,11 +16,12 @@ namespace track_project::trackinit
     constexpr size_t HOUGHSLICE_THETA_CLUSTER_TOL_DEG = 1.0; // 霍夫空间中检测到的直线参数凝聚时的角度阈值（度），必须可以被角度分辨率整除
     constexpr double HOUGHSLICE_RHO_CLUSTER_TOL_KM = 0.1;    // 霍夫空间中检测到的直线参数凝聚时的距离阈值（公里），必须可以被距离分辨率整除
 
-    // LOGIC BASED 逻辑法参数
-    constexpr double LOGIC_BASED_ABS_X_MAX = 500.0; // 最大的X坐标的绝对值上限（KM），以雷达站为原点，正东向右
-    constexpr double LOGIC_BASED_ABS_Y_MAX = 500.0; // 最大的Y坐标的绝对值上限（KM），以雷达站为原点，正北向上
-    constexpr size_t LOGIC_BASED_MAX_X_BINS = 1000; // X轴方向离散单元数量，严重影响性能和内存占用
-    constexpr size_t LOGIC_BASED_MAX_Y_BINS = 1000; // Y轴方向离散单元数量，严重影响性能和内存占用
+    // ============ LOGIC BASED 空间参数 ============
+    constexpr double LOGIC_BASED_MAX_ABS_X = 400.0;                 // 最大的X坐标的绝对值上限（KM），以雷达站为原点，正东向右
+    constexpr double LOGIC_BASED_MAX_ABS_Y = 400.0;                 // 最大的Y坐标的绝对值上限（KM），以雷达站为原点，正北向上
+    constexpr size_t LOGIC_BASED_NUM_X_BINS = 800;                 // X轴方向离散单元数量，严重影响性能和内存占用
+    constexpr size_t LOGIC_BASED_NUM_Y_BINS = 800;                 // Y轴方向离散单元数量，严重影响性能和内存占用
+    constexpr size_t LOGIC_BASED_MAX_CHILDREN_PER_PARENT_NODE = 5; // 每个父假设节点可以拥有的子节点的数量上限
 
     /*****************************************************************************
      * @brief 状态码

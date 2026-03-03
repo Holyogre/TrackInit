@@ -20,12 +20,8 @@ namespace track_project::trackinit
     class LogicBasedInitiator : public TrackInitBase
     {
     public:
-        // 友元测试类（在 tests/test_LogicBasedInitiator.cpp 中定义）
+        // 友元测试类
         friend class test_LogicBasedInitiator;
-
-    private:
-        static constexpr size_t MAX_BINS = LOGIC_BASED_MAX_X_BINS * LOGIC_BASED_MAX_Y_BINS; // 最大允许的距离门数量乘以角度门数量
-
         // 假设节点（Hypothesis Node）
         struct HypothesisNode
         {
@@ -41,6 +37,12 @@ namespace track_project::trackinit
             // 置信度，我计划从两个方面计算，一个时通过雷达视界的置信度参考图，另一个通过DOPPLER的分布情况
             double confidence;
         };
+
+    private:
+        static constexpr size_t MAX_BINS = LOGIC_BASED_NUM_X_BINS * LOGIC_BASED_NUM_Y_BINS; // 最大允许的距离门数量乘以角度门数量
+        // 每个bin中假设节点的最大数量，因为第三批次的结果直接输出出去了，因此每个节点中最多拥有1+子节点数量+孙节点数量的假设节点
+        static constexpr size_t MAX_NODE_PER_BINS = LOGIC_BASED_MAX_CHILDREN_PER_PARENT_NODE * LOGIC_BASED_MAX_CHILDREN_PER_PARENT_NODE +
+                                                    LOGIC_BASED_MAX_CHILDREN_PER_PARENT_NODE + 1;
 
     public:
         LogicBasedInitiator();
@@ -62,12 +64,24 @@ namespace track_project::trackinit
          *****************************************************************************/
         std::string get_name() const override { return "LogicBasedInitiator"; }
 
-    private:
         /*****************************************************************************
-         * @brief 构建误差分布表格
-         * *******************************************/
-        void build_error_distribution_table();
+         * @brief ⚠️特有：改装版逻辑法特有的函数，用于构建误差分布表格
+         *
+         * @param error_table 输入参数，存储每个bin的误差分布数据(sigma_x,sigma_y)
+         *****************************************************************************/
+        inline void build_error_distribution_table(std::vector<std::pair<double, double>> &error_table)
+        {
+            // 1. 检查大小是否完全匹配
+            const size_t expected_size = MAX_BINS;
+            const size_t actual_size = error_table.size();
 
+            assert(actual_size == expected_size && "错误：误差分布表格大小不匹配！");
+
+            // 3. 执行拷贝（深拷贝）
+            error_distribution_table_ = error_table;
+        }
+
+    private:
         /*****************************************************************************
          * @brief 移动批次数据和假设树，清空最旧的批次数据和对应的假设树，
          * 更新索引表,确保[0]索引对应的总是最新的数据
@@ -105,10 +119,10 @@ namespace track_project::trackinit
         std::array<std::vector<HypothesisNode>, 4> hypothesis_layers_; // 各个假设节点存储区域
         std::array<Timestamp, 4> batch_timestamps_;                    // 每批点迹的时间戳，单位秒
 
-        std::array<std::vector<HypothesisNode *>, MAX_BINS> current_hypothesis_index_; // 当前假设索引表
-        std::array<std::vector<HypothesisNode *>, MAX_BINS> history_hypothesis_index_; // 历史假设索引表
+        std::vector<std::vector<HypothesisNode *>> current_hypothesis_index_; // 当前假设索引表，大小默认为MAX_BINS，不用ARRAY是因为容易栈溢出
+        std::vector<std::vector<HypothesisNode *>> history_hypothesis_index_; // 历史假设索引表，大小默认为MAX_BINS，不用ARRAY是因为容易栈溢出
 
-        std::array<std::pair<double, double>, MAX_BINS> error_distribution_table_; // 误差分布表格，存储每个bin的误差分布数据(sigma_x,sigma_y)
+        std::vector<std::pair<double, double>> error_distribution_table_; // 误差分布表格，存储每个bin的误差分布数据(sigma_x,sigma_y)，大小默认为MAX_BINS，不用ARRAY是因为容易栈溢出
     };
 }
 #endif //_LOGIC_BASED_INITIATOR_HPP_
