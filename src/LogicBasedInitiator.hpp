@@ -9,18 +9,22 @@
  *
  *****************************************************************************/
 
-#ifndef _LOGIC_BASED_HPP_
-#define _LOGIC_BASED_HPP_
+#ifndef _LOGIC_BASED_INITIATOR_HPP_
+#define _LOGIC_BASED_INITIATOR_HPP_
 
 #include "TrackInitBase.hpp"
 #include <unordered_map>
 
 namespace track_project::trackinit
 {
-    class LogicBasedTracker : public TrackInitBase
+    class LogicBasedInitiator : public TrackInitBase
     {
+    public:
+        // 友元测试类（在 tests/test_LogicBasedInitiator.cpp 中定义）
+        friend class test_LogicBasedInitiator;
+
     private:
-        static constexpr size_t MAX_BINS = LOGIC_BASED_MAX_R_BINS * LOGIC_BASED_MAX_THETA_BINS; // 最大允许的距离门数量乘以角度门数量
+        static constexpr size_t MAX_BINS = LOGIC_BASED_MAX_X_BINS * LOGIC_BASED_MAX_Y_BINS; // 最大允许的距离门数量乘以角度门数量
 
         // 假设节点（Hypothesis Node）
         struct HypothesisNode
@@ -39,8 +43,8 @@ namespace track_project::trackinit
         };
 
     public:
-        LogicBasedTracker();
-        virtual ~LogicBasedTracker() noexcept = default;
+        LogicBasedInitiator();
+        virtual ~LogicBasedInitiator() noexcept = default;
 
         /*****************************************************************************
          * @brief 检测直线，在cpp文件中
@@ -56,9 +60,14 @@ namespace track_project::trackinit
         /*****************************************************************************
          * @brief 获取 name 对象
          *****************************************************************************/
-        std::string get_name() const override { return "LogicBasedTracker"; }
+        std::string get_name() const override { return "LogicBasedInitiator"; }
 
     private:
+        /*****************************************************************************
+         * @brief 构建误差分布表格
+         * *******************************************/
+        void build_error_distribution_table();
+
         /*****************************************************************************
          * @brief 移动批次数据和假设树，清空最旧的批次数据和对应的假设树，
          * 更新索引表,确保[0]索引对应的总是最新的数据
@@ -85,11 +94,11 @@ namespace track_project::trackinit
         /*****************************************************************************
          * @brief 输入当前点迹的经纬度，查询所有满足要求的假设树节点
          *
-         * @param longitude 输入点迹的经度，单位度
-         * @param latitude 输入点迹的纬度，单位度
-         * @return std::vector<HypothesisNode *> 所有可能的假设列表
+         * @param x 输入点迹的x坐标，单位米，东方向为x正方向
+         * @param y 输入点迹的y坐标，单位米，北方向为y正方向
+         * @return std::vector<HypothesisNode *> 所有可能的假设列表/误差分布结果的索引
          *****************************************************************************/
-        std::vector<HypothesisNode *> query_nodes_by_location(double lon, double lat) const;
+        std::vector<HypothesisNode *> query_nodes_by_location(double x, double y) const;
 
     private:
         std::array<std::vector<TrackPoint>, 4> point_batches_;         // 追溯点迹区域，存储四批点迹
@@ -98,6 +107,8 @@ namespace track_project::trackinit
 
         std::array<std::vector<HypothesisNode *>, MAX_BINS> current_hypothesis_index_; // 当前假设索引表
         std::array<std::vector<HypothesisNode *>, MAX_BINS> history_hypothesis_index_; // 历史假设索引表
+
+        std::array<std::pair<double, double>, MAX_BINS> error_distribution_table_; // 误差分布表格，存储每个bin的误差分布数据(sigma_x,sigma_y)
     };
 }
-#endif //_LOGIC_BASED_HPP_
+#endif //_LOGIC_BASED_INITIATOR_HPP_

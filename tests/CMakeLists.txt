@@ -1,4 +1,4 @@
-find_package(Catch2 REQUIRED CONFIG HINTS "/usr/local/lib/cmake/Catch2") 
+find_package(Catch2 REQUIRED CONFIG HINTS "/usr/local/lib/cmake/Catch2")
 
 
 # ==================== 测试函数 ====================
@@ -10,21 +10,21 @@ function(add_track_test TEST_NAME SOURCE_FILE)
     add_executable(${TEST_NAME}
         ${SOURCE_FILE}
         ${IMPL_FILES}
-        ../utils/Logger.cpp  # 添加 Logger 实现
+        ../utils/Logger.cpp # 添加 Logger 实现
     )
 
-    target_include_directories(${TEST_NAME} PRIVATE 
+    target_include_directories(${TEST_NAME} PRIVATE
         ${CMAKE_SOURCE_DIR}/src
-        ${CMAKE_SOURCE_DIR}/utils  # 添加 utils 包含路径
+        ${CMAKE_SOURCE_DIR}/utils # 添加 utils 包含路径
         ${CMAKE_SOURCE_DIR}/include
         ${CMAKE_SOURCE_DIR}/TrackManager
-        ${OpenCV_INCLUDE_DIRS}  # 添加 OpenCV 包含目录
+        ${OpenCV_INCLUDE_DIRS} # 添加 OpenCV 包含目录
     )
 
-    target_link_libraries(${TEST_NAME} PRIVATE 
+    target_link_libraries(${TEST_NAME} PRIVATE
         Catch2::Catch2WithMain
-        spdlog::spdlog  # 链接 spdlog
-        "${OpenCV_LIBS}"  # 添加 OpenCV 库，推荐加引号防止变量为空时报错
+        spdlog::spdlog # 链接 spdlog
+        "${OpenCV_LIBS}" # 添加 OpenCV 库，推荐加引号防止变量为空时报错
     )
 
     # 关键：定义宏
@@ -55,13 +55,17 @@ endfunction()
 #                 test_BitArray.cpp
 #                 ../src/BitArray.hpp
 #                 ${MYUTILS_SOURCES})
-add_track_test(test_HoughSlice
-                test_HoughSlice.cpp
-                ../src/HoughSlice.cpp
-                ../src/Func_dbscan.cpp
-                ${MYUTILS_SOURCES}
-                ${TRACKMANAGER_SOURCES})
-
+# add_track_test(test_HoughSlice
+#     test_HoughSlice.cpp
+#     ../src/HoughSlice.cpp
+#     ../src/Func_dbscan.cpp
+#     ${MYUTILS_SOURCES}
+#     ${TRACKMANAGER_SOURCES})
+add_track_test(test_LogicBasedInitiator
+    test_LogicBasedInitiator.cpp
+    ../src/LogicBasedInitiator.cpp
+    ${MYUTILS_SOURCES}
+    ${TRACKMANAGER_SOURCES})
 
 
 
@@ -69,5 +73,6 @@ add_track_test(test_HoughSlice
 # add_test(NAME testObjectPool功能测试 COMMAND testObjectPool "[memory_pool][]")
 # add_test(NAME ClustDBSCAN COMMAND test_ClustDBSCAN "[dbscan][]")
 # add_test(NAME bitARRAY全面测试 COMMAND test_BitArray "[bitarray][]")
-add_test(NAME HoughSlice功能测试 COMMAND test_HoughSlice "[FunctionalityCheck][]")
+# add_test(NAME HoughSlice功能测试 COMMAND test_HoughSlice "[FunctionalityCheck][]")
+add_test(NAME LogicBasedInitiator功能测试 COMMAND test_LogicBasedInitiator "")
 

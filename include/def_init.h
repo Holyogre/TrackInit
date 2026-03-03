@@ -17,8 +17,10 @@ namespace track_project::trackinit
     constexpr double HOUGHSLICE_RHO_CLUSTER_TOL_KM = 0.1;    // 霍夫空间中检测到的直线参数凝聚时的距离阈值（公里），必须可以被距离分辨率整除
 
     // LOGIC BASED 逻辑法参数
-    constexpr size_t LOGIC_BASED_MAX_R_BINS = 100.0;     // 允许分割的最大距离门数量
-    constexpr size_t LOGIC_BASED_MAX_THETA_BINS = 100.0; // 允许分割的最大角度门数量
+    constexpr double LOGIC_BASED_ABS_X_MAX = 500.0; // 最大的X坐标的绝对值上限（KM），以雷达站为原点，正东向右
+    constexpr double LOGIC_BASED_ABS_Y_MAX = 500.0; // 最大的Y坐标的绝对值上限（KM），以雷达站为原点，正北向上
+    constexpr size_t LOGIC_BASED_MAX_X_BINS = 1000; // X轴方向离散单元数量，严重影响性能和内存占用
+    constexpr size_t LOGIC_BASED_MAX_Y_BINS = 1000; // Y轴方向离散单元数量，严重影响性能和内存占用
 
     /*****************************************************************************
      * @brief 状态码
