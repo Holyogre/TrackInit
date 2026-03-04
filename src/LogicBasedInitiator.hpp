@@ -13,7 +13,6 @@
 #define _LOGIC_BASED_INITIATOR_HPP_
 
 #include "TrackInitBase.hpp"
-#include <unordered_set>
 
 namespace track_project::trackinit
 {
@@ -31,8 +30,8 @@ namespace track_project::trackinit
 
             size_t depth; // 节点深度(0-3)
 
-            TrackPoint *associated_obs;  // 关联的观测点迹
-            HypothesisNode *parent_node; // 上一深度节点
+            TrackPoint *associated_point; // 关联的观测点迹
+            HypothesisNode *parent_node;  // 上一深度节点
 
             // 置信度，我计划从两个方面计算，一个时通过雷达视界的置信度参考图，另一个通过DOPPLER的分布情况
             double confidence;
@@ -94,16 +93,9 @@ namespace track_project::trackinit
          * @param points
          * @return ProcessStatus 错误码，SUCCESS表示成功，其他值表示具体错误
          *****************************************************************************/
-        ProcessStatus extend_hypotheses(const TrackPoint &point, const std::unordered_set<HypothesisNode *> &parent_nodes);
+        ProcessStatus extend_hypotheses(const TrackPoint &point, const std::vector<HypothesisNode *> &parent_nodes);
 
-        //**********************************工具函数**************************************** */
-        /*****************************************************************************
-         * @brief svd拟合直线，输入4个点迹，输出直线参数a,b,c，满足ax+by+c=0
-         *
-         * @param points 输入点迹，包含4个TrackPoint
-         * @return std::array<double, 3>  对应变量a,b,c
-         *****************************************************************************/
-        std::array<double, 3> fit_line_svd(const std::vector<const TrackPoint *> &points) const;
+
 
         /*****************************************************************************
          * @brief 输入当前点迹的经纬度和DOPPLER，经过反推查询所有满足要求的假设树节点
@@ -117,12 +109,13 @@ namespace track_project::trackinit
          * @param x 输入点迹的x坐标，单位米，东方向为x正方向
          * @param y 输入点迹的y坐标，单位米，北方向为y正方向
          * @param doppler 输入点迹的DOPPLER值
-         * @return std::unordered_set<HypothesisNode *>
-         * @version 0.3 xjl，修改了函数的返回值，遍历轮次提高的时候存在性能瓶颈,优化成这个了,以通用性为代价。。
+         * @return std::vector<HypothesisNode *>
+         * @version 0.3 xjl，修改了函数的搜索方式，不再遍历大圈，只依据当前格子
+         *
          * @copyright Copyright (c) 2026
          * @author xjl (xjl20011009@126.com)
          *****************************************************************************/
-        std::unordered_set<HypothesisNode *> query_nodes_by_points(double x, double y, double doppler) const;
+        std::vector<HypothesisNode *> query_nodes_by_points(const TrackPoint &point) const;
 
         /*****************************************************************************
          * @brief 依据doppler和doppler计算船只的航向范围
@@ -136,25 +129,40 @@ namespace track_project::trackinit
         std::pair<double, double> calculate_heading_range(double x, double y, double doppler) const;
 
         /*****************************************************************************
+         * @brief 对于xy坐标，进行里离散化，输出对应的x_index和y_index
+         *
+         * @param x 输入点迹的x坐标，单位米，东方向为x正方向
+         * @param y 输入点迹的y坐标，单位米，北方向为y正方向
+         * @return std::pair<size_t,size_t> 对应的x_index和y_index
+         *****************************************************************************/
+        std::pair<size_t, size_t> location_to_xy_index(double x, double y) const;
+
+        /*****************************************************************************
          * @brief 输入经纬度，输出对应的bin索引
          *
          * @param x 输入点迹的x坐标，单位米，东方向为x正方向
          * @param y 输入点迹的y坐标，单位米，北方向为y正方向
          * @return size_t bin索引，范围[0,MAX_BINS)，如果超出范围则返回MAX_BINS表示无效索引
          *****************************************************************************/
-        size_t location_to_node_index(double x, double y) const;
+        size_t location_to_bin_index(double x, double y) const;
+
+        /*****************************************************************************
+         * @brief svd拟合直线，输入4个点迹，输出直线参数a,b,c，满足ax+by+c=0
+         *
+         * @param points 输入点迹，包含4个TrackPoint
+         * @return std::array<double, 3>  对应变量a,b,c
+         *****************************************************************************/
+        std::array<double, 3> fit_line_svd(const std::vector<const TrackPoint *> &points) const;
 
     private:
         std::array<std::vector<TrackPoint>, 4> point_batches_;         // 追溯点迹区域，存储四批点迹
         std::array<std::vector<HypothesisNode>, 4> hypothesis_layers_; // 各个假设节点存储区域
-        std::array<Timestamp, 4> batch_timestamps_;                    // 每批点迹的时间戳，单位秒
+        std::array<Timestamp, 4> timestamp_batches_;                   // 每批点迹的时间戳，单位秒
 
-        // 假设列表，大小默认为MAX_BINS，不用ARRAY是因为容易栈溢出
+        // 假设列表，大小默认为MAX_BINS，按波门分割，不用ARRAY是因为容易栈溢出
         std::vector<std::vector<HypothesisNode *>> current_hypothesis_index_; // 当前假设索引表，
         std::vector<std::vector<HypothesisNode *>> history_hypothesis_index_; // 历史假设索引表
-
-        // 误差分布表格，存储每个bin的误差分布数据(sigma_x,sigma_y)，大小默认为MAX_BINS，不用ARRAY是因为容易栈溢出
-        std::vector<std::pair<double, double>> error_distribution_table_;
+        std::vector<std::pair<double, double>> error_distribution_table_;     // bin的误差分布数据(sigma_x,sigma_y)
     };
 }
 #endif //_LOGIC_BASED_INITIATOR_HPP_

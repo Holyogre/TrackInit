@@ -324,7 +324,7 @@
    - python的svd分解转换成CPP
    - 首要：实现一个基础的假设构建函数extend_hypotheses，实现一到四帧的假设推演，当depth=3的目标将要出现时，取消出现，调用output_hypotheses判断航迹是否满足条件，输出为正式航迹
 
-### 2026-03-02 至 2026-03-13
+### 2026-03-02 至 2026-03-5
 1. **LogicBasedTracker核心功能实现**
    - 基础逻辑：拆分为hypothesis索引，hypothesis推导，和航迹质量判断两个核心部分
    - 部分完成了hypothesis索引的实现，找到了波门大小，缺少依据DOPPLER反推可能的波门的步骤，我标记了TODO，
@@ -338,3 +338,23 @@
    - 继续完善hypothesis索引的实现，增加DOPPLER反推可能的波门的步骤，我标记了TODO
    - 实现hypothesis推导函数extend_hypotheses，实现一到四帧的假设推演，尤其是需要引入DOPPLER来进行减枝，此外当depth=3的目标将要出现时，取消出现，调用output_hypotheses判断航迹是否满足条件，输出为正式航迹
    - 进一步调整hypothesis索引的波门大小，确保能够覆盖合理范围的点迹，同时避免过多无效假设的生成
+
+
+### 2026-03-6
+1. **LogicBasedTracker假设索引函数实现**
+   - 完成了hypothesis索引函数的实现，主要包括以下步骤：
+      - 计算当前假设节点的x,y位置，提取sigma_x和sigma_y
+      - 根据预先计算的误差分布函数，确定索引波门的大小，确保能够覆盖合理范围的点迹
+      - 依据VX,VY，判断哪些点迹落在索引波门内，并且满足距离门限和多普勒门限的条件
+      - 对于满足条件的点迹，生成新的假设节点，并将其添加到hypothesis_tree_中
+2. **工具函数**
+   - calculate_heading_range()：根据当前假设节点的航向和速度范围，计算出可能的航向范围，用于索引时的角度判断
+   - location_to_xy_index()：location_to_bin_index()：将点迹的实际位置转换为x,y索引和bin索引，便于进行索引波门的判断
+3. **TODO / 明日计划**
+   - 实现hypothesis推导函数extend_hypotheses，实现一到三帧的假设推演
+     - 尤其是第四帧需要引入DOPPLER来进行减枝
+     - 此外当depth=3的目标将要出现时，取消出现，调用output_hypotheses判断航迹是否满足条件，输出为正式航迹
+   - 引入calculate_vr_range()函数，根据当前假设节点推断doppler变化范围(不用考虑中间是否过了最小值，这个交给extend_hypotheses函数实现)，进一步优化假设索引的条件，减少无效假设的生成
+     - 现在vr_min,br_max的求取均没有完成，我暂时放到backup里面了，明天写vr_min,vr_max的索引 
+   - 代码均没有进行测试，明天需要进行两批次点迹的测试，验证hypothesis索引函数的正确性和性能表现
+     - 我总感觉现在这个索引函数在bin不够小的时候不如直接大范围暴力遍历。。。 也许需要写一个暴力遍历的对照函数进行对比

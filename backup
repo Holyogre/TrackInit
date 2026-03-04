@@ -1,0 +1,33 @@
+计算DOPPLER最大值最小值的：
+暂时保存下，明天再写：
+double prev_point_x = node->associated_point->x;
+                double prev_point_y = node->associated_point->y;
+                double prev_point_doppler = node->associated_point->doppler;
+                double dx = x - prev_point_x;
+                double dy = y - prev_point_y;
+
+                double doppler_min, doppler_max;
+
+                // 依据假设点doppler方向判断doppler是否在范围内
+                if (doppler > 0)
+                {
+                    // 如果doppler点靠近，说明当前值不可能比致的doppler更大，因为cv目标仅当朝雷达站移动时，doppler不会变小
+                    doppler_max = prev_point_doppler + base_doppler_tolerance_m_s * 2.58 + LOGIC_BASED_PROTECTIVE_DOPPLER_M_S; // 2.58SIGMA对应99.99%的概率
+
+                    // 最小值需要先判断点迹移动过程中有无经历doppler为零的情况
+                    double m = (prev_point_x * dx + prev_point_y * dy);
+                    double n = (x * dx + y * dy);
+                    if (m * n <= 0) // 说明反向，总之必然有doppler为0的情况
+                    {
+                        doppler_min = -base_doppler_tolerance_m_s * 2.58 - LOGIC_BASED_PROTECTIVE_DOPPLER_M_S; // 2.58SIGMA对应99.99%的概率
+                    }
+                    else
+                    {
+                        doppler_min = prev_point_doppler - base_doppler_tolerance_m_s * 2.58 - LOGIC_BASED_PROTECTIVE_DOPPLER_M_S; // 2.58SIGMA对应99.99%的概率
+                    }
+                }
+
+                // 计算理论doppler值
+                double distance_to_base = std::sqrt(prev_point_x * prev_point_x + prev_point_y * prev_point_y);
+                assert(distance_to_base > 1 && "距离基准点过近，可能导致计算不稳定！"); // debug，一般不认为能有点离雷达站这么近
+                
