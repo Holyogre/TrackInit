@@ -56,15 +56,6 @@ namespace track_project::trackinit
             double sigma_y = std::sqrt(sigma_y2);
 
             error_distribution_table_[i] = std::make_pair(sigma_x, sigma_y);
-
-            // 在循环里加个调试
-            // 找 rho > 400km 的点
-            if (rho > 300)
-            {
-                std::cout << "rho=" << rho << ", theta=" << theta * 180 / M_PI
-                          << "°, sigma_x=" << sqrt(sigma_x2)
-                          << ", sigma_y=" << sqrt(sigma_y2) << std::endl;
-            }
         }
     }
 
@@ -87,7 +78,7 @@ namespace track_project::trackinit
         for (auto point : points)
         {
             // 查询满足条件的假设节点
-            auto candidate_nodes_ = query_nodes_by_location(point.longitude, point.latitude);
+            auto candidate_nodes_ = query_nodes_by_points(point.longitude, point.latitude, point.doppler);
 
             if (candidate_nodes_.empty())
             {
@@ -124,52 +115,97 @@ namespace track_project::trackinit
         hypothesis_layers_[0].clear();
     }
 
-    // query_nodes_by_location
-    std::vector<LogicBasedInitiator::HypothesisNode *> LogicBasedInitiator::query_nodes_by_location(double x, double y) const
+    // 只有DOPPLER参数，因此需要外推所有可能的X,Y所在位置，然后依据误差分布函数进一步扩大搜索范围，最后合并重复假设
+    // doppler粗筛，位置精筛
+    std::unordered_set<LogicBasedInitiator::HypothesisNode *> LogicBasedInitiator::query_nodes_by_points(double x, double y, double doppler) const
     {
+        // 计算可能的航向范围
+        std::pair<double, double> heading_range = calculate_heading_range(x, y, doppler);
 
-        // TODO，依据DOPPLER反推可能的波门大小，从而确定需要查询的bin范围，目前先暂时扩大范围，之后再试试根据误差分布表格计算合理的范围
-        // 后面的索引还要改，不是简单的获取一次波们就可以了，得先依据所有可能的波们，再结合误差分布表格计算出所有可能的bin范围，最后查询这些bin中的假设节点
-        // 所以逻辑错了，明天改吧
+        // 计算依据对应航向所有可能的x_index,y_index列表,步长为离散分辨率,heading的单位为rad,北偏东
+        std::unordered_set<size_t> bin_index; // 使用unordered_set自动去重
+        for (double heading = heading_range.first; heading <= heading_range.second; heading += LOGIC_BASED_HEADING_RESOLUTION_DEG * M_PI / 180.0)
+        {
+            // 计算对应的x,y位置
+            double vx = track_project::velocity_max * std::sin(heading);
+            double vy = track_project::velocity_max * std::cos(heading);
+            // vx,vy粗筛
+            double doppler_calculated = (vx * x + vy * y) / std::sqrt(x * x + y * y); // 计算该航向下的doppler值
 
-        // 计算分辨率
+            // 计算索引 TODO ，这里需要思考一下，pair和index_pair哪个更好
+            auto index_pair = location_to_node_index(x, y);
+
+            // todo doppler约束
+            //  if (std::abs(doppler_calculated - doppler) <= track_project::base_doppler_tolerance_m_s)
+            //  {
+            //      // 计算对应的bin索引
+            //      auto [x_index, y_index] = location_to_node_index(x, y);
+            //      candidate_indices.insert(location_to_node_index(x, y));
+            //  }
+        }
+
+        std::unordered_set<LogicBasedInitiator::HypothesisNode *> candidate_indices; // 使用unordered_set自动去重
+    }
+
+    // 依据x,y和doppler计算船只的航向范围
+    std::pair<double, double> LogicBasedInitiator::calculate_heading_range(double x, double y, double doppler) const
+    {
+        // 依据doppler和velocity_max计算所有可能的航向角度序列
+        double abs_doppler = std::abs(doppler); // 取绝对值，单位m/s
+        if (abs_doppler > track_project::velocity_max)
+        {
+            return {}; // 速度超过最大值，跳过该点迹
+        }
+
+        // 计算基准航向，依据doppler的正负确定是朝向还是背向，为极坐标表示方法，便于调用math库函数计算
+        double line_of_sight_rad = std::atan2(y, x); // 观测方向（极坐标）
+        double base_dir_rad = 0.0;
+        if (doppler > 0) // 表示靠近还是原理，以此决定是否加PI
+        {
+            base_dir_rad = line_of_sight_rad + M_PI;
+            if (base_dir_rad >= 2 * M_PI)
+            {
+                base_dir_rad -= 2 * M_PI;
+            }
+        }
+        else // 不然，值域为(-pi,pi)，需要归一化到(0,2*pi)
+        {
+            base_dir_rad = line_of_sight_rad;
+            if (base_dir_rad < 0)
+            {
+                base_dir_rad += 2 * M_PI;
+            }
+        }
+
+        // 计算可能的速度方向与视线方向的夹角,abs_doppler不可能为0，此时检测不出来
+        double angle_rad = std::acos(abs_doppler / track_project::velocity_max); // 计算夹角，弧度，范围[0,pi/2)
+        angle_rad = std::clamp(angle_rad, 1e-4, M_PI / 2.0 - 1e-4);              // 确保夹角在合理范围内
+
+        double heading1 = base_dir_rad - angle_rad;
+        double heading2 = base_dir_rad + angle_rad;
+
+        return std::make_pair(heading1, heading2);
+    }
+
+    // 计算BIN值对应的索引
+    size_t LogicBasedInitiator::location_to_node_index(double x, double y) const
+    {
+        //  计算分辨率
         double x_bin_size = (2 * LOGIC_BASED_MAX_ABS_X) / LOGIC_BASED_NUM_X_BINS; // X轴每个bin的大小
         double y_bin_size = (2 * LOGIC_BASED_MAX_ABS_Y) / LOGIC_BASED_NUM_Y_BINS; // Y轴每个bin的大小
 
-        // 离散化输入坐标，四舍五入，计算对应的bin索引
+        // 离散化输入坐标，四舍五入，计算对应的x,y索引
         size_t x_index = static_cast<size_t>(std::round((x + LOGIC_BASED_MAX_ABS_X) / x_bin_size));
         size_t y_index = static_cast<size_t>(std::round((y + LOGIC_BASED_MAX_ABS_Y) / y_bin_size));
+        x_index = std::clamp(x_index, static_cast<size_t>(0), LOGIC_BASED_NUM_X_BINS - 1);
+        y_index = std::clamp(y_index, static_cast<size_t>(0), LOGIC_BASED_NUM_Y_BINS - 1);
 
-        // 先查表查看当前点的误差分布情况，根据误差分布情况计算需要查询的bin范围
-        size_t x_bin_range = error_distribution_table_[x_index * LOGIC_BASED_NUM_Y_BINS + y_index].first;  // 误差分布表格中存储的x方向误差范围，单位bin数量
-        size_t y_bin_range = error_distribution_table_[x_index * LOGIC_BASED_NUM_Y_BINS + y_index].second; // 误差分布表格中存储的y方向误差范围，单位bin数量
-
-        // 依据range，计算所有假设位置
-        std::vector<HypothesisNode *> candidate_nodes;
-        for (int dx = -x_bin_range; dx <= x_bin_range; ++dx)
-        {
-            for (int dy = -y_bin_range; dy <= y_bin_range; ++dy)
-            {
-                // 计算需要查询的bin索引
-                size_t query_x_index = x_index + dx;
-                size_t query_y_index = y_index + dy;
-
-                // 检查索引是否越界
-                if (query_x_index >= LOGIC_BASED_NUM_X_BINS || query_y_index >= LOGIC_BASED_NUM_Y_BINS)
-                {
-                    continue; // 索引越界，跳过
-                }
-
-                // 计算bin索引
-                size_t bin_index = query_x_index * LOGIC_BASED_NUM_Y_BINS + query_y_index;
-                // 将该bin中的假设节点加入候选列表
-                candidate_nodes.insert(candidate_nodes.end(), current_hypothesis_index_[bin_index].begin(), current_hypothesis_index_[bin_index].end());
-            }
-        }
-        return candidate_nodes;
+        // 依据x,y索引，计算bin索引
+        size_t bin_index = x_index * LOGIC_BASED_NUM_Y_BINS + y_index; // 计算bin索引，范围[0,MAX_BINS)
+        return bin_index;
     }
 
-    ProcessStatus LogicBasedInitiator::extend_hypotheses(const TrackPoint &point, const std::vector<HypothesisNode *> &parent_nodes)
+    ProcessStatus LogicBasedInitiator::extend_hypotheses(const TrackPoint &point, const std::unordered_set<HypothesisNode *> &parent_nodes)
     {
         // TODO
         return ProcessStatus::SUCCESS;
