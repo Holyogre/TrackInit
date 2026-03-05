@@ -116,126 +116,70 @@ namespace track_project::trackinit
         hypothesis_layers_[0].clear();
     }
 
-    // 只有DOPPLER参数，因此需要外推所有可能的X,Y所在位置，然后依据误差分布函数进一步扩大搜索范围，最后合并重复假设
-    // doppler粗筛，位置精筛
+    // 查询假设节点，输入当前点迹的经纬度和DOPPLER，经过反推查询所有满足要求的假设树节点
     std::vector<LogicBasedInitiator::HypothesisNode *> LogicBasedInitiator::query_nodes_by_points(const TrackPoint &point) const
     {
-        // 参数提取
-        double x = point.x;             // 单位km
-        double y = point.y;             // 单位km
-        double doppler = point.doppler; // 单位m/s
+        // 参数提取（注意：point.x/y单位是米，内部计算需要保持一致）
+        double x = point.x;
+        double y = point.y;
+        double doppler = point.doppler;                                                                                    // m/s
+        double dt = static_cast<double>(timestamp_batches_[0].milliseconds - timestamp_batches_[1].milliseconds) / 1000.0; // s
 
-        // 计算可能的航向范围
-        std::pair<double, double> heading_range = calculate_heading_range(x, y, doppler);
-        heading_range.first += M_PI; // 由于是倒推前一个点，所以要反向
-        heading_range.second += M_PI;
+        // ===== 第一步：从多普勒反推可能的航向范围 =====
+        std::pair<double, double> heading_center_and_range = calculate_heading_range(x, y, doppler);
 
-        // 计算当前点迹的sigma_x和sigma_y，航迹起始阶段不确定性太大，尽量保证检测率，虚警率交给后一步判断
-        auto [sigma_x, sigma_y] = error_distribution_table_[location_to_bin_index(x, y)];
-        double search_radius_x = 2.58 * sigma_x; // 2.58SIGMA对应99.99%的概率
-        double search_radius_y = 2.58 * sigma_y; // 2.58SIGMA对应99.99%的概率
-
-        // 计算时间
-        double dt = static_cast<double>(timestamp_batches_[0].milliseconds - timestamp_batches_[1].milliseconds) / 1000.0;
-
-        // 计算依据对应航向所有可能的x_index,y_index列表，多搜索一圈以防万一,步长为离散分辨率,heading的单位为rad,北偏东
-        std::unordered_set<size_t> bin_indices;                                            // 使用unordered_set自动去重
-        double heading_resolution_rad = LOGIC_BASED_HEADING_RESOLUTION_DEG * M_PI / 180.0; // 航向离散分辨率，单位弧度
-        for (double heading = heading_range.first; heading <= heading_range.second + heading_resolution_rad; heading += heading_resolution_rad)
+        // ===== 第二步：收集所有航向产生的prev点，按bin聚类 =====
+        struct PrevPointInfo
         {
-            // 计算对应的x,y位置
-            double vx = track_project::velocity_max * std::sin(heading);
-            double vy = track_project::velocity_max * std::cos(heading);
-            double doppler_calculated = (vx * x + vy * y) / std::sqrt(x * x + y * y); // 计算该航向下的doppler值
+            double vr_min;
+            double vr_max;
+        };
 
-            // 依据航向计算前一个假设的基准XY坐标
-            double prev_x = x - vx * dt; // 依据航向和速度计算前一个假设的XY坐标
-            double prev_y = y - vy * dt;
+        // 使用unordered_map按bin_idx分组
+        std::unordered_map<size_t, std::vector<PrevPointInfo>> points_by_bin;
 
-            // 计算对应的XY的SIGMA范围，扩大搜索范围，实际上标准的做法是用更大的区间反向搜索是否符合SIGMA范围，因为本算法中，误差分布函数与坐标相关
-            auto [prev_sigma_x, prev_sigma_y] = error_distribution_table_[location_to_bin_index(prev_x, prev_y)];
-            double search_radius_pre_x = 2.58 * prev_sigma_x; // 2.58SIGMA对应99.99%的概率
-            double search_radius_pre_y = 2.58 * prev_sigma_y; // 2.58SIGMA对应99.99%的概率
-
-            // 依据当前点迹的不确定度和前一个假设的不确定度扩大搜索范围
-            double total_search_radius_x = search_radius_x + search_radius_pre_x + LOGIC_BASED_PROTECTIVE_RADIUS_KM;
-            double total_search_radius_y = search_radius_y + search_radius_pre_y + LOGIC_BASED_PROTECTIVE_RADIUS_KM;
-            double x_min = prev_x - total_search_radius_x;
-            double x_max = prev_x + total_search_radius_x;
-            double y_min = prev_y - total_search_radius_y;
-            double y_max = prev_y + total_search_radius_y;
-            auto [x_index_min, y_index_min] = location_to_xy_index(x_min, y_min);
-            auto [x_index_max, y_index_max] = location_to_xy_index(x_max, y_max);
-
-            // 加入满足条件的bin索引，用unordered_set自动去重，确保每个bin索引唯一
-            for (size_t x_index = x_index_min; x_index <= x_index_max; ++x_index)
-            {
-                for (size_t y_index = y_index_min; y_index <= y_index_max; ++y_index)
-                {
-                    size_t index = x_index * LOGIC_BASED_NUM_Y_BINS + y_index;
-                    bin_indices.insert(index);
-                }
-            }
-        }
-
-        // 依据doppler进一步进行筛选，只保留满足条件的假设节点
-        std::vector<HypothesisNode *> candidate_nodes_; // 候选节点列表
-        for (auto bin_index : bin_indices)
-        {
-            // 获取该bin索引对应的假设节点列表，加入候选节点列表
-            const auto &nodes_in_bin = history_hypothesis_index_[bin_index];
-
-            // 遍历假设节点信息
-            for (auto node : nodes_in_bin)
-            {
-                if (doppler >= node->vr_min && doppler <= node->vr_max)
-                {
-                    candidate_nodes_.push_back(node);
-                }
-            }
-        }
-
-        return candidate_nodes_;
+       
     }
 
-    // 依据x,y和doppler计算船只的航向范围
+    // 输出航向中心，和上下波动范围
     std::pair<double, double> LogicBasedInitiator::calculate_heading_range(double x, double y, double doppler) const
     {
-        // 依据doppler和velocity_max计算所有可能的航向角度序列
-        double abs_doppler = std::abs(doppler); // 取绝对值，单位m/s
-        if (abs_doppler > track_project::velocity_max)
+        // 计算距离和视线方向
+        double r = std::sqrt(x * x + y * y);
+        assert(r > 1 && "存在异常点迹，检测输入端");
+
+        // 船只相对于雷达站的北偏东角度（弧度）
+        double los_angle = std::atan2(x, y); // atan2(x, y)得到相对于北的角度
+
+        // 中心航向
+        double heading_center = (doppler < 0) ? los_angle : los_angle + M_PI; // 以视线方向作为中心
+
+        // 获取abs_doppler
+        double abs_doppler = std::abs(doppler);
+
+        // 如果Doppler足够小直接给半圆范围，避免数值不稳定
+        if (abs_doppler < 1e-6)
         {
-            return {}; // 速度超过最大值，跳过该点迹
+            // 可能的航向范围是个半圆
+            double heading_range = M_PI / 2; // 单一方向
+
+            return std::make_pair(heading_center, heading_range);
         }
 
-        // 计算基准航向，依据doppler的正负确定是朝向还是背向，为极坐标表示方法，便于调用math库函数计算
-        double line_of_sight_rad = std::atan2(y, x); // 观测方向（极坐标）
-        double base_dir_rad = 0.0;
-        if (doppler > 0) // 表示靠近还是原理，以此决定是否加PI
+        // 对于过大多普勒只给一个方向
+        if (abs_doppler > track_project::velocity_max - 1e-3)
         {
-            base_dir_rad = line_of_sight_rad + M_PI;
-            if (base_dir_rad >= 2 * M_PI)
-            {
-                base_dir_rad -= 2 * M_PI;
-            }
-        }
-        else // 不然，值域为(-pi,pi)，需要归一化到(0,2*pi)
-        {
-            base_dir_rad = line_of_sight_rad;
-            if (base_dir_rad < 0)
-            {
-                base_dir_rad += 2 * M_PI;
-            }
+            double heading_range = 0.0; // 单一方向
+
+            return std::make_pair(heading_center, heading_range);
         }
 
-        // 计算可能的速度方向与视线方向的夹角,abs_doppler不可能为0，此时检测不出来
-        double angle_rad = std::acos(abs_doppler / track_project::velocity_max); // 计算夹角，弧度，范围[0,pi/2)
-        angle_rad = std::clamp(angle_rad, 1e-4, M_PI / 2.0 - 1e-4);              // 确保夹角在合理范围内
+        // 最小可能的夹角（对应最大船速）
+        double cos_aspect_angle = abs_doppler / track_project::velocity_max;
+        cos_aspect_angle = std::clamp(cos_aspect_angle, 0.0, 1.0); // 确保在有效范围内
+        double aspect_angle = std::acos(cos_aspect_angle);         // 航向与径向的夹角
 
-        double heading1 = base_dir_rad - angle_rad;
-        double heading2 = base_dir_rad + angle_rad;
-
-        return std::make_pair(heading1, heading2);
+        return std::make_pair(heading_center, aspect_angle);
     }
 
     // 计算x,y坐标对应的离散x,y索引

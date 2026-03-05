@@ -24,9 +24,6 @@ namespace track_project::trackinit
         // 假设节点（Hypothesis Node）
         struct HypothesisNode
         {
-            double heading; // 航向假设
-            double vr_min;  // 径向速度下限
-            double vr_max;  // 径向速度上限
 
             size_t depth; // 节点深度(0-3)
 
@@ -118,13 +115,13 @@ namespace track_project::trackinit
         std::vector<HypothesisNode *> query_nodes_by_points(const TrackPoint &point) const;
 
         /*****************************************************************************
-         * @brief 依据doppler和doppler计算船只的航向范围
-         * 返回航向范围，北偏东，单位弧度，范围[-0.5PI,2.5PI)以确保航向连续性
+         * @brief 根据输入的点迹经纬度和DOPPLER，输出{航向中心值，航向偏移量}，单位弧度
+         * 均在0-2pi之间
          *
          * @param x 输入点迹的x坐标，单位米，东方向为x正方向
          * @param y 输入点迹的y坐标，单位米，北方向为y正方向
          * @param doppler 输入点迹的DOPPLER值，单位m/s，朝着雷达站是正方向
-         * @return std::pair<double, double> 航向范围，北偏东，单位弧度，范围[-0.5PI,2.5PI)
+         * @return  std::pair<double, double> {航向中心值，航向偏移量}，单位弧度
          *****************************************************************************/
         std::pair<double, double> calculate_heading_range(double x, double y, double doppler) const;
 
