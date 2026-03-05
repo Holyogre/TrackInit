@@ -340,7 +340,7 @@
    - 进一步调整hypothesis索引的波门大小，确保能够覆盖合理范围的点迹，同时避免过多无效假设的生成
 
 
-### 2026-03-6
+### 2026-03-05
 1. **LogicBasedTracker假设索引函数实现**
    - 完成了hypothesis索引函数的实现，主要包括以下步骤：
       - 计算当前假设节点的x,y位置，提取sigma_x和sigma_y
@@ -358,3 +358,20 @@
      - 现在vr_min,br_max的求取均没有完成，我暂时放到backup里面了，明天写vr_min,vr_max的索引 
    - 代码均没有进行测试，明天需要进行两批次点迹的测试，验证hypothesis索引函数的正确性和性能表现
      - 我总感觉现在这个索引函数在bin不够小的时候不如直接大范围暴力遍历。。。 也许需要写一个暴力遍历的对照函数进行对比
+
+## 2026-03-06
+1. calculate_vr_range()函数放到query_nodes_by_points()函数中实现，因为query_nodes_by_points函数逻辑进行了完整的修改
+2. node删除了 vrmin vrmax，因为我感觉不如依据下一个点推断来的准确。置信度我也打算删除了，反正最后也不输出
+3. **query_nodes_by_points()逻辑修改（主要工作）**
+   - 注意到此前的逻辑存在严重的区域重复问题，因此修改了逻辑，先依据heading查找可能的点迹范围
+   - 之后，依据x,y上的误差，计算理论的bin范围，同时剔除重复区域。
+   - 最后，对于每个具体的点迹，结合vx,vy,doppler的保护计算可能的doppler范围，最后进行索引
+   - 我计划同构两个sigma和运动距离计算heading_range，从而推算doppler的最大值最小值
+4. 完成了calculate_bin_index_range()，进行解耦。。倒是没什么创新
+5. 重写了calculate_heading_range(),现在输出heading_center和range，取代了原先的start,end值
+6. hypothesis推导函数extend_hypotheses函数估计要改写成process了，不然process结构太单调了，只有位移和extend？减枝直接在depth=3的时候，在output_hypotheses里面输出得了，算了别想这么多，这个之后再搞
+7. **TODO / 明日计划**
+   - extrack_hypothesis_from_bins函数实现
+   - get_expansion_regions函数实现，在桌面track_project文件夹中有写好的 python代码，可以对于那个优化，但是扩展区域还有进一步去重要做。。这个之后再想吧
+   - calculate_vr_range()函数实现，基于最大误差：两个sigma+PROTECTED集合平均数和distance计算heading范围，然后推断vr范围。。走一步看一步吧
+   - 索引函数query_nodes_by_points正确性任然没验证

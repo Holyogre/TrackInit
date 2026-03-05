@@ -31,7 +31,8 @@ namespace track_project::trackinit
             HypothesisNode *parent_node;  // 上一深度节点
 
             // 置信度，我计划从两个方面计算，一个时通过雷达视界的置信度参考图，另一个通过DOPPLER的分布情况
-            double confidence;
+            // 边界搜索已经囊括了，没必要重复计算
+            // double confidence;
         };
 
     private:
@@ -92,8 +93,6 @@ namespace track_project::trackinit
          *****************************************************************************/
         ProcessStatus extend_hypotheses(const TrackPoint &point, const std::vector<HypothesisNode *> &parent_nodes);
 
-
-
         /*****************************************************************************
          * @brief 输入当前点迹的经纬度和DOPPLER，经过反推查询所有满足要求的假设树节点
          * 为了节省算力，假定相关点迹之间的误差分布函数不会有过大的变化，使用3.29SIGMA的门限对周围进行搜索
@@ -103,8 +102,8 @@ namespace track_project::trackinit
          * 3. 如果包括，就将该BIN中的假设节点加入候选列表，并且对于该候选添加一个置信度，
          * 4. 置信度的结果为误差分布函数（离散化后）在该点的值。其中，我的专利提供了一种实时离散化误差分布函数的方法
          *
-         * @param x 输入点迹的x坐标，单位米，东方向为x正方向
-         * @param y 输入点迹的y坐标，单位米，北方向为y正方向
+         * @param x 输入点迹的x坐标，单位千米，东方向为x正方向
+         * @param y 输入点迹的y坐标，单位千米，北方向为y正方向
          * @param doppler 输入点迹的DOPPLER值
          * @return std::vector<HypothesisNode *>
          * @version 0.3 xjl，修改了函数的搜索方式，不再遍历大圈，只依据当前格子
@@ -115,11 +114,10 @@ namespace track_project::trackinit
         std::vector<HypothesisNode *> query_nodes_by_points(const TrackPoint &point) const;
 
         /*****************************************************************************
-         * @brief 根据输入的点迹经纬度和DOPPLER，输出{航向中心值，航向偏移量}，单位弧度
-         * 均在0-2pi之间
+         * @brief 输入当前点迹的经纬度和DOPPLER，经过反推计算出可能的航向范围{航向中心值，航向偏移量}
          *
-         * @param x 输入点迹的x坐标，单位米，东方向为x正方向
-         * @param y 输入点迹的y坐标，单位米，北方向为y正方向
+         * @param x 输入点迹的x坐标，单位千米，东方向为x正方向
+         * @param y 输入点迹的y坐标，单位千米，北方向为y正方向
          * @param doppler 输入点迹的DOPPLER值，单位m/s，朝着雷达站是正方向
          * @return  std::pair<double, double> {航向中心值，航向偏移量}，单位弧度
          *****************************************************************************/
@@ -127,9 +125,10 @@ namespace track_project::trackinit
 
         /*****************************************************************************
          * @brief 对于xy坐标，进行里离散化，输出对应的x_index和y_index
+         * 带边界条件处理
          *
-         * @param x 输入点迹的x坐标，单位米，东方向为x正方向
-         * @param y 输入点迹的y坐标，单位米，北方向为y正方向
+         * @param x 输入点迹的x坐标，单位千米，东方向为x正方向
+         * @param y 输入点迹的y坐标，单位千米，北方向为y正方向
          * @return std::pair<size_t,size_t> 对应的x_index和y_index
          *****************************************************************************/
         std::pair<size_t, size_t> location_to_xy_index(double x, double y) const;
@@ -137,11 +136,46 @@ namespace track_project::trackinit
         /*****************************************************************************
          * @brief 输入经纬度，输出对应的bin索引
          *
-         * @param x 输入点迹的x坐标，单位米，东方向为x正方向
-         * @param y 输入点迹的y坐标，单位米，北方向为y正方向
+         * @param x 输入点迹的x坐标，单位千米，东方向为x正方向
+         * @param y 输入点迹的y坐标，单位千米，北方向为y正方向
          * @return size_t bin索引，范围[0,MAX_BINS)，如果超出范围则返回MAX_BINS表示无效索引
          *****************************************************************************/
         size_t location_to_bin_index(double x, double y) const;
+
+        /*****************************************************************************
+         * @brief 给定两个均在同一个波门内的点迹，读取波门sigma值
+         * 结合保护半径 ， 计算添加方差后的{x_min_index,x_max_index,y_min_index,y_max_index}，用于后续的查询
+         *
+         * @param x_min 输入点迹的x坐标的最小值，单位千米，东方向为x正方向
+         * @param x_max 输入点迹的x坐标的最大值，单位千米，东方向为x正方向
+         * @param y_min 输入点迹的y坐标的最小值，单位千米，北方向为y正方向
+         * @param y_max 输入点迹的y坐标的最大值，单位千米，北方向为y正方向
+         * @param x_protected 输入点迹的x坐标的保护半径，单位千米，东方向为x正方向
+         * @param y_protected 输入点迹的y坐标的保护半径，单位千米，北方向为y正方向
+         * @return std::array<size_t, 4> 对应的{x_min_index,x_max_index,y_min_index,y_max_index}，用于后续的查询
+         *****************************************************************************/
+        std::array<size_t, 4> calculate_bin_index_range(double x_min, double x_max, double y_min, double y_max,
+                                                        double x_protected, double y_protected) const;
+
+        /*****************************************************************************
+         * @brief 输入bin索引范围，输出对应的假设节点列表
+         *
+         * @param bin_index_range 点迹索引范围:{x_min_index,x_max_index,y_min_index,y_max_index}
+         * @return std::vector<HypothesisNode *> 对应的假设节点列表
+         *****************************************************************************/
+        std::vector<HypothesisNode *> extrack_hypothesis_from_bins(const std::array<size_t, 4> &bin_index_range) const;
+
+        /*****************************************************************************
+         * @brief 输入两个矩形的索引范围，输出第一个矩形没有而第二个矩形拥有的矩形
+         * vector中每个元素都是一个矩形的索引范围:{x_min_index,x_max_index,y_min_index,y_max_index}
+         * 保证四个矩形范围不重合，且完全覆盖第二个矩形相对于第一个矩形的新增部分
+         *
+         * @param prev_index_range 第一个矩形的索引范围{x_min_index,x_max_index,y_min_index,y_max_index}
+         * @param current_index_range 第二个矩形的索引范围{x_min_index,x_max_index,y_min_index,y_max_index}
+         * @return std::vector<std::array<size_t, 4>> 至多四个矩形，用于表示第一个矩形没有而第二个矩形拥有的矩形
+         *                              元素结构均为{x_min_index,x_max_index,y_min_index,y_max_index}
+         *****************************************************************************/
+        std::vector<std::array<size_t, 4>> get_expansion_regions(const std::array<size_t, 4> &old_rect, const std::array<size_t, 4> &new_rect) const;
 
         /*****************************************************************************
          * @brief svd拟合直线，输入4个点迹，输出直线参数a,b,c，满足ax+by+c=0
