@@ -21,6 +21,7 @@ namespace track_project::trackinit
     public:
         // 友元测试类
         friend class test_LogicBasedInitiator;
+
         // 假设节点（Hypothesis Node）
         struct HypothesisNode
         {
@@ -30,9 +31,13 @@ namespace track_project::trackinit
             TrackPoint *associated_point; // 关联的观测点迹
             HypothesisNode *parent_node;  // 上一深度节点
 
-            // 置信度，我计划从两个方面计算，一个时通过雷达视界的置信度参考图，另一个通过DOPPLER的分布情况
-            //  效果不好，以后考虑优化吧todo
-            // double confidence;
+            double heading_start; // 该假设节点对应的航向范围的起始值，单位弧度
+            double heading_end;   // 该假设节点对应的航向范围的结束值，单位弧度
+
+            double confidence; // 置信度，计算方式我还没想好todo
+
+            HypothesisNode(size_t d, TrackPoint *pt, HypothesisNode *parent, double h_start, double h_end, double conf)
+                : depth(d), associated_point(pt), parent_node(parent), heading_start(h_start), heading_end(h_end), confidence(conf) {}
         };
 
     private:
@@ -83,14 +88,6 @@ namespace track_project::trackinit
         void shift_batches_and_hypotheses();
 
         /*****************************************************************************
-         * @brief 扩展假设树，若有点迹未被存放到任何假设树中，就以这些点迹为基础生成新的假设树
-         *
-         * @param points
-         * @return ProcessStatus 错误码，SUCCESS表示成功，其他值表示具体错误
-         *****************************************************************************/
-        ProcessStatus extend_hypotheses(const TrackPoint &point, const std::vector<HypothesisNode *> &parent_nodes);
-
-        /*****************************************************************************
          * @brief 输入当前点迹的经纬度和DOPPLER，经过反推查询所有满足要求的假设树节点
          * 为了节省算力，假定相关点迹之间的误差分布函数不会有过大的变化，使用3.29SIGMA的门限对周围进行搜索
          * 未来如果要改进的话，应该是：
@@ -104,11 +101,11 @@ namespace track_project::trackinit
          * @param doppler 输入点迹的DOPPLER值
          * @return std::vector<HypothesisNode *>
          * @version 0.3 xjl，修改了函数的搜索方式，不再遍历大圈，只依据当前格子
-         *
+         *  0.4 xjl ，修改了函数的搜索方式，重新引入了大圈搜索，增加heading范围计算的思路
          * @copyright Copyright (c) 2026
          * @author xjl (xjl20011009@126.com)
          *****************************************************************************/
-        std::vector<HypothesisNode *> query_nodes_by_points(const TrackPoint &point) const;
+        std::vector<HypothesisNode> query_nodes_by_points(const TrackPoint &point) const;
 
         /*****************************************************************************
          * @brief 输入当前点迹的经纬度和DOPPLER，经过反推计算出可能的航向范围{航向中心值，航向偏移量}
@@ -129,15 +126,6 @@ namespace track_project::trackinit
          * @return std::pair<size_t,size_t> 对应的x_index和y_index
          *****************************************************************************/
         std::pair<size_t, size_t> location_to_xy_index(double x, double y) const;
-
-        /*****************************************************************************
-         * @brief 对于输入的x_index和y_index，进行离散化，输出对应的x,y坐标（bin中心点坐标）
-         *
-         * @param x_index 输入点迹的x_index索引，范围[0,LOGIC_BASED_NUM_X_BINS)
-         * @param y_index 输入点迹的y_index索引，范围[0,LOGIC_BASED_NUM_Y_BINS)
-         * @return std::pair<double, double> 对应的x,y坐标（bin中心点坐标）
-         *****************************************************************************/
-        std::pair<double, double> xy_index_to_location(size_t x_index, size_t y_index) const;
 
         /*****************************************************************************
          * @brief 输入经纬度，输出对应的bin索引
@@ -163,6 +151,13 @@ namespace track_project::trackinit
         std::array<size_t, 4> calculate_bin_index_range(double x_min, double x_max, double y_min, double y_max,
                                                         double x_protected, double y_protected) const;
 
+        /*****************************************************************************
+         * @brief 扩展假设树，若有点迹未被存放到任何假设树中，就以这些点迹为基础生成新的假设树
+         *
+         * @param node 待处理的假设节点
+         * @return ProcessStatus 错误码，SUCCESS表示成功，其他值表示具体错误
+         *****************************************************************************/
+        ProcessStatus extend_hypotheses(const std::vector<HypothesisNode> &node);
 
         /*****************************************************************************
          * @brief svd拟合直线，输入4个点迹，输出直线参数a,b,c，满足ax+by+c=0

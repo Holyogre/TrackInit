@@ -75,7 +75,6 @@ namespace track_project::trackinit
         // 清空输出航迹
         new_tracks.clear();
 
-        // ==================== STEP1: 扩展假设树 ====================
         for (auto point : points)
         {
             // 查询满足条件的假设节点
@@ -87,7 +86,7 @@ namespace track_project::trackinit
             }
 
             // 没有满足条件的假设节点，以该点迹为基础生成新的假设树
-            ProcessStatus status = extend_hypotheses(point, candidate_nodes_);
+            ProcessStatus status = extend_hypotheses(candidate_nodes_);
         }
 
         return ProcessStatus::SUCCESS;
@@ -117,7 +116,7 @@ namespace track_project::trackinit
     }
 
     // 查询假设节点，输入当前点迹的经纬度和DOPPLER，经过反推查询所有满足要求的假设树节点
-    std::vector<LogicBasedInitiator::HypothesisNode *> LogicBasedInitiator::query_nodes_by_points(const TrackPoint &point) const
+    std::vector<LogicBasedInitiator::HypothesisNode> LogicBasedInitiator::query_nodes_by_points(const TrackPoint &point) const
     {
         // 参数提取
         double x = point.x;
@@ -134,18 +133,14 @@ namespace track_project::trackinit
         std::pair<double, double> heading_center_and_range = calculate_heading_range(x, y, doppler);
 
         // ===== 第二步：收集所有航向产生的prev点，并记录边界值 =====
+        // 用于记录外推点迹的边界情况
         struct prev_info
         {
             size_t bin_index;
-
-            double x;
-            double y;
-
-            double bias_x_max;
-            double bias_y_max;
-
-            double doppler_min;
-            double doppler_max;
+            double x, y;
+            double heading_start, heading_end;
+            double bias_x_max, bias_y_max;
+            double doppler_min, doppler_max;
         };
         double prev_x_min = std::numeric_limits<double>::max();
         double prev_x_max = std::numeric_limits<double>::lowest();
@@ -179,13 +174,17 @@ namespace track_project::trackinit
                 auto bin_error = error_distribution_table_[bin_index]; // 该bin对应的误差分布参数
                 double temp_bias_x_max = x_protected + 1.96 * bin_error.first;
                 double temp_bias_y_max = y_protected + 1.96 * bin_error.second;
-                prev_info_list.push_back({bin_index, prev_x, prev_y, temp_bias_x_max, temp_bias_y_max, prev_doppler, prev_doppler});
+                double heading_start = heading;
+                double heading_end = heading;
+                prev_info_list.push_back({bin_index, prev_x, prev_y, heading_start, heading_end, temp_bias_x_max, temp_bias_y_max, prev_doppler, prev_doppler});
             }
             else // 该点已经存在，更新边界值
             {
                 auto &temp_prev_info = prev_info_list.back();
                 temp_prev_info.x = (prev_x + temp_prev_info.x) / 2.0; // 近似取中心点，一般来说一个波们差不多也就遍历个1-3次，无所谓了
                 temp_prev_info.y = (prev_y + temp_prev_info.y) / 2.0;
+                temp_prev_info.heading_start = std::min(temp_prev_info.heading_start, heading);
+                temp_prev_info.heading_end = std::max(temp_prev_info.heading_end, heading);
                 temp_prev_info.bias_x_max = std::max(temp_prev_info.bias_x_max, x_protected + 1.96 * error_distribution_table_[bin_index].first);
                 temp_prev_info.bias_y_max = std::max(temp_prev_info.bias_y_max, y_protected + 1.96 * error_distribution_table_[bin_index].second);
                 temp_prev_info.doppler_min = std::min(temp_prev_info.doppler_min, prev_doppler);
@@ -201,16 +200,21 @@ namespace track_project::trackinit
 
         // ===== 第三步：构造搜索区域，遍历搜索区域，提取符合要求的点迹 =====
         std::array<size_t, 4> bin_index_range = calculate_bin_index_range(prev_x_min, prev_x_max, prev_y_min, prev_y_max, x_protected, y_protected);
-        std::vector<HypothesisNode *> candidate_nodes;                                      // 存储满足条件的假设节点
+        std::vector<HypothesisNode> candidate_nodes;                                        // 存储满足条件的假设节点
         for (size_t x_index = bin_index_range[0]; x_index <= bin_index_range[1]; ++x_index) // 为了确保假设只被遍历一次
         {
             for (size_t y_index = bin_index_range[2]; y_index <= bin_index_range[3]; ++y_index)
             {
                 size_t bin_index = x_index * LOGIC_BASED_NUM_Y_BINS + y_index;
+
                 // 遍历该bin中的假设节点
                 for (HypothesisNode *node : history_hypothesis_index_[bin_index]) // 节点是稀疏的，绝大多数情况这个for循环不会执行
                 {
                     TrackPoint hypothesis_point = *(node->associated_point); // 假设节点关联的点迹
+                    int match_count = 0;                                     // 匹配计数器
+                    double hypothesis_heading_start = node->heading_start;
+                    double hypothesis_heading_end = node->heading_end;
+                    std::pair<double, double> temp_heading_range(1e10, -1e10);
 
                     for (const auto &prev_info_cell : prev_info_list) // 至多30次循环
                     {
@@ -228,10 +232,29 @@ namespace track_project::trackinit
                             continue; // 不满足位置条件，跳过该节点
                         }
 
-                        // 满足条件，添加到候选节点列表中
-                        candidate_nodes.push_back(node);
-                        break; // 能和其中一个点关联上就是能够关联上
+                        // 计算当前航向可能范围的并集
+                        temp_heading_range.first = std::min(temp_heading_range.first, prev_info_cell.heading_start);
+                        temp_heading_range.second = std::max(temp_heading_range.second, prev_info_cell.heading_end);
+                        match_count++;
                     }
+
+                    // 计算置信度，匹配点迹占比
+                    double confidence = static_cast<double>(match_count) / prev_info_list.size(); // 置信度，匹配点迹占比
+                    if (confidence < 0.2)                                                         // 认为无重叠航向，舍去该点
+                    {
+                        continue; // 不满足航向条件，跳过该节点
+                    }
+
+                    // 和历史假设取并集
+                    hypothesis_heading_start = std::min(temp_heading_range.first, hypothesis_heading_start);
+                    hypothesis_heading_end = std::max(temp_heading_range.second, hypothesis_heading_end);
+
+                    if (hypothesis_heading_end < hypothesis_heading_start) // 不存在重合航向，舍去该点
+                    {
+                        continue; // 不满足航向条件，跳过该节点
+                    }
+                    // 满足条件，加入候选节点列表
+                    candidate_nodes.emplace_back(node->depth + 1, &point, node->parent_node, hypothesis_heading_start, hypothesis_heading_end, confidence);
                 }
             }
         }
@@ -306,24 +329,6 @@ namespace track_project::trackinit
         return bin_index;
     }
 
-    // 将离散的x,y索引转换回对应的空间坐标（返回bin中心点的坐标）
-    std::pair<double, double> LogicBasedInitiator::xy_index_to_location(size_t x_index, size_t y_index) const
-    {
-        // 计算分辨率
-        double x_bin_size = (2 * LOGIC_BASED_MAX_ABS_X) / LOGIC_BASED_NUM_X_BINS;
-        double y_bin_size = (2 * LOGIC_BASED_MAX_ABS_Y) / LOGIC_BASED_NUM_Y_BINS;
-
-        // 确保索引在有效范围内
-        x_index = std::clamp(x_index, static_cast<size_t>(0), LOGIC_BASED_NUM_X_BINS - 1);
-        y_index = std::clamp(y_index, static_cast<size_t>(0), LOGIC_BASED_NUM_Y_BINS - 1);
-
-        // 计算bin的中心坐标
-        // 公式：x = x_index * x_bin_size + x_bin_size/2 - LOGIC_BASED_MAX_ABS_X
-        double x = (static_cast<double>(x_index) + 0.5) * x_bin_size - LOGIC_BASED_MAX_ABS_X;
-        double y = (static_cast<double>(y_index) + 0.5) * y_bin_size - LOGIC_BASED_MAX_ABS_Y;
-
-        return std::make_pair(x, y);
-    }
     // 保护范围实际上应该是另一个点的sigma值，加上宏定义的边界值，计算该波门的真实边界值
     std::array<size_t, 4> LogicBasedInitiator::calculate_bin_index_range(double x_min, double x_max, double y_min, double y_max,
                                                                          double x_protected, double y_protected) const
@@ -349,7 +354,7 @@ namespace track_project::trackinit
         return {x_min_index, x_max_index, y_min_index, y_max_index};
     }
 
-    ProcessStatus LogicBasedInitiator::extend_hypotheses(const TrackPoint &point, const std::vector<HypothesisNode *> &parent_nodes)
+    ProcessStatus LogicBasedInitiator::extend_hypotheses(const std::vector<HypothesisNode> &node)
     {
         // TODO
         return ProcessStatus::SUCCESS;
