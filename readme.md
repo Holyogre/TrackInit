@@ -375,3 +375,5 @@
    - get_expansion_regions函数实现，在桌面track_project文件夹中有写好的 python代码，可以对于那个优化，但是扩展区域还有进一步去重要做。。这个之后再想吧
    - calculate_vr_range()函数实现，基于最大误差：两个sigma+PROTECTED集合平均数和distance计算heading范围，然后推断vr范围。。走一步看一步吧
    - 索引函数query_nodes_by_points正确性任然没验证
+
+1. 准备给prev_info加个heading_start,heading_end，来优化索引范围的计算。之后extend假设可以依据这个来扩展heading，从而尽量解决doppler过小时候的关联问题。

@@ -27,9 +27,6 @@ using track_project::trackinit::LogicBasedInitiator;
 namespace track_project::trackinit
 {
     static constexpr size_t MAX_BINS = LOGIC_BASED_NUM_X_BINS * LOGIC_BASED_NUM_Y_BINS; // 最大允许的距离门数量乘以角度门数量
-    // 每个bin中假设节点的最大数量，因为第三批次的结果直接输出出去了，因此每个节点中最多拥有1+子节点数量+孙节点数量的假设节点
-    static constexpr size_t MAX_NODE_PER_BINS = LOGIC_BASED_MAX_CHILDREN_PER_PARENT_NODE * LOGIC_BASED_MAX_CHILDREN_PER_PARENT_NODE +
-                                                LOGIC_BASED_MAX_CHILDREN_PER_PARENT_NODE + 1;
 
     // test_LogicBasedInitiator.h
     class test_LogicBasedInitiator

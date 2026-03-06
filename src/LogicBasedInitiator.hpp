@@ -31,15 +31,12 @@ namespace track_project::trackinit
             HypothesisNode *parent_node;  // 上一深度节点
 
             // 置信度，我计划从两个方面计算，一个时通过雷达视界的置信度参考图，另一个通过DOPPLER的分布情况
-            // 边界搜索已经囊括了，没必要重复计算
+            //  效果不好，以后考虑优化吧todo
             // double confidence;
         };
 
     private:
         static constexpr size_t MAX_BINS = LOGIC_BASED_NUM_X_BINS * LOGIC_BASED_NUM_Y_BINS; // 最大允许的距离门数量乘以角度门数量
-        // 每个bin中假设节点的最大数量，因为第三批次的结果直接输出出去了，因此每个节点中最多拥有1+子节点数量+孙节点数量的假设节点
-        static constexpr size_t MAX_NODE_PER_BINS = LOGIC_BASED_MAX_CHILDREN_PER_PARENT_NODE * LOGIC_BASED_MAX_CHILDREN_PER_PARENT_NODE +
-                                                    LOGIC_BASED_MAX_CHILDREN_PER_PARENT_NODE + 1;
 
     public:
         LogicBasedInitiator();
@@ -134,6 +131,15 @@ namespace track_project::trackinit
         std::pair<size_t, size_t> location_to_xy_index(double x, double y) const;
 
         /*****************************************************************************
+         * @brief 对于输入的x_index和y_index，进行离散化，输出对应的x,y坐标（bin中心点坐标）
+         *
+         * @param x_index 输入点迹的x_index索引，范围[0,LOGIC_BASED_NUM_X_BINS)
+         * @param y_index 输入点迹的y_index索引，范围[0,LOGIC_BASED_NUM_Y_BINS)
+         * @return std::pair<double, double> 对应的x,y坐标（bin中心点坐标）
+         *****************************************************************************/
+        std::pair<double, double> xy_index_to_location(size_t x_index, size_t y_index) const;
+
+        /*****************************************************************************
          * @brief 输入经纬度，输出对应的bin索引
          *
          * @param x 输入点迹的x坐标，单位千米，东方向为x正方向
@@ -157,25 +163,6 @@ namespace track_project::trackinit
         std::array<size_t, 4> calculate_bin_index_range(double x_min, double x_max, double y_min, double y_max,
                                                         double x_protected, double y_protected) const;
 
-        /*****************************************************************************
-         * @brief 输入bin索引范围，输出对应的假设节点列表
-         *
-         * @param bin_index_range 点迹索引范围:{x_min_index,x_max_index,y_min_index,y_max_index}
-         * @return std::vector<HypothesisNode *> 对应的假设节点列表
-         *****************************************************************************/
-        std::vector<HypothesisNode *> extrack_hypothesis_from_bins(const std::array<size_t, 4> &bin_index_range) const;
-
-        /*****************************************************************************
-         * @brief 输入两个矩形的索引范围，输出第一个矩形没有而第二个矩形拥有的矩形
-         * vector中每个元素都是一个矩形的索引范围:{x_min_index,x_max_index,y_min_index,y_max_index}
-         * 保证四个矩形范围不重合，且完全覆盖第二个矩形相对于第一个矩形的新增部分
-         *
-         * @param prev_index_range 第一个矩形的索引范围{x_min_index,x_max_index,y_min_index,y_max_index}
-         * @param current_index_range 第二个矩形的索引范围{x_min_index,x_max_index,y_min_index,y_max_index}
-         * @return std::vector<std::array<size_t, 4>> 至多四个矩形，用于表示第一个矩形没有而第二个矩形拥有的矩形
-         *                              元素结构均为{x_min_index,x_max_index,y_min_index,y_max_index}
-         *****************************************************************************/
-        std::vector<std::array<size_t, 4>> get_expansion_regions(const std::array<size_t, 4> &old_rect, const std::array<size_t, 4> &new_rect) const;
 
         /*****************************************************************************
          * @brief svd拟合直线，输入4个点迹，输出直线参数a,b,c，满足ax+by+c=0
