@@ -1,4 +1,3 @@
-#include "../src/HoughSlice.hpp"
 #include "../include/defsystem.h"
 #include <vector>
 #include <random>
@@ -108,6 +107,100 @@ void point_update_cv_with_noise(
 }
 
 // ——————————————————————————————————点迹生成函数————————————————————————————————//
+/*****************************************************************************
+ * @brief 使用直角坐标参数生成点迹：x, y, vx, vy
+ *
+ * @param time 时间戳，单位毫秒
+ * @param params 参数列表，每个元素为[x, y, vx, vy]
+ * @return std::vector<TrackPoint> 生成的点迹群
+ *****************************************************************************/
+std::vector<TrackPoint> generate_target_points_xyv(int64_t time,const std::vector<std::array<double, 4>> &params)
+{
+    std::vector<TrackPoint> pts;
+    pts.reserve(params.size());
+
+
+    for (const auto &param : params)
+    {
+        TrackPoint p{};
+
+        // 直接使用传入的参数
+        p.x = param[0];
+        p.y = param[1];
+        p.vx = param[2];
+        p.vy = param[3];
+
+        // 计算SOG和COG
+        p.sog = std::sqrt(p.vx * p.vx + p.vy * p.vy);
+        p.cog = std::atan2(p.vy, p.vx) * 180.0 / M_PI; // 北偏东，atan2(y,x)给出与x轴夹角
+        if (p.cog < 0)
+            p.cog += 360.0;
+
+        // 多普勒速度 (假设雷达在原点)
+        double point_angle = std::atan2(p.y, p.x);
+        double cog_rad = p.cog * M_PI / 180.0;
+        p.doppler = p.sog * std::cos(point_angle - cog_rad);
+
+        // 时间戳
+        p.time.milliseconds = time;
+
+        // 经纬度
+        sync_lon_lat(p);
+
+        pts.push_back(p);
+    }
+    return pts;
+}
+
+/*****************************************************************************
+ * @brief 使用极坐标参数生成点迹：theta(deg), rho(km), sog(knot), cog(deg)
+ *        theta和cog均为北偏东
+ *
+ * @param time 时间戳，单位毫秒
+ * @param params 参数列表，每个元素为[theta, rho, sog, cog]
+ * @return std::vector<TrackPoint> 生成的点迹群
+ *****************************************************************************/
+std::vector<TrackPoint> generate_target_points_polar(int64_t time,
+                                                     const std::vector<std::array<double, 4>> &params)
+{
+    std::vector<TrackPoint> pts;
+    pts.reserve(params.size());
+
+    for (const auto &param : params)
+    {
+        TrackPoint p{};
+
+        double theta_deg = param[0]; // 方位角，度，北偏东
+        double rho = param[1];       // 距离，千米
+        p.sog = param[2];            // 航速，节
+        p.cog = param[3];            // 航向，度，北偏东
+
+        // 极坐标转直角坐标 (北偏东)
+        double theta_rad = theta_deg * M_PI / 180.0;
+        p.x = rho * std::sin(theta_rad); // x = rho * sin(theta)
+        p.y = rho * std::cos(theta_rad); // y = rho * cos(theta)
+
+        // 航向转速度分量 (北偏东)
+        double cog_rad = p.cog * M_PI / 180.0;
+        p.vx = p.sog * std::sin(cog_rad); // vx = sog * sin(cog)
+        p.vy = p.sog * std::cos(cog_rad); // vy = sog * cos(cog)
+
+        // 多普勒速度 (假设雷达在原点)
+        double point_angle = std::atan2(p.y, p.x);
+        p.doppler = p.sog * std::cos(point_angle - cog_rad);
+
+        // 时间戳
+        p.time.milliseconds = time;
+
+        // 经纬度
+        sync_lon_lat(p);
+
+        pts.push_back(p);
+    }
+    
+    return pts;
+}
+
 /*****************************************************************************
  * @brief 用于生成符合点迹生成参数的均匀分布的点迹群
  *

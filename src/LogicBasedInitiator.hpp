@@ -28,15 +28,15 @@ namespace track_project::trackinit
 
             size_t depth; // 节点深度(0-3)
 
-            TrackPoint *associated_point; // 关联的观测点迹
-            HypothesisNode *parent_node;  // 上一深度节点
+            const TrackPoint *associated_point; // 关联的观测点迹
+            HypothesisNode *parent_node;        // 上一深度节点
 
             double heading_start; // 该假设节点对应的航向范围的起始值，单位弧度
             double heading_end;   // 该假设节点对应的航向范围的结束值，单位弧度
 
             double confidence; // 置信度，计算方式我还没想好todo
 
-            HypothesisNode(size_t d, TrackPoint *pt, HypothesisNode *parent, double h_start, double h_end, double conf)
+            HypothesisNode(size_t d, const TrackPoint *pt, HypothesisNode *parent, double h_start, double h_end, double conf)
                 : depth(d), associated_point(pt), parent_node(parent), heading_start(h_start), heading_end(h_end), confidence(conf) {}
         };
 
@@ -102,10 +102,11 @@ namespace track_project::trackinit
          * @return std::vector<HypothesisNode *>
          * @version 0.3 xjl，修改了函数的搜索方式，不再遍历大圈，只依据当前格子
          *  0.4 xjl ，修改了函数的搜索方式，重新引入了大圈搜索，增加heading范围计算的思路
+         * 0.5 修改函数名，现在叫做make，因为实际上干了构造的活而不是查询的活了
          * @copyright Copyright (c) 2026
          * @author xjl (xjl20011009@126.com)
          *****************************************************************************/
-        std::vector<HypothesisNode> query_nodes_by_points(const TrackPoint &point) const;
+        std::vector<HypothesisNode> make_nodes_by_points(const TrackPoint &point) const;
 
         /*****************************************************************************
          * @brief 输入当前点迹的经纬度和DOPPLER，经过反推计算出可能的航向范围{航向中心值，航向偏移量}
@@ -135,6 +136,20 @@ namespace track_project::trackinit
          * @return size_t bin索引，范围[0,MAX_BINS)，如果超出范围则返回MAX_BINS表示无效索引
          *****************************************************************************/
         size_t location_to_bin_index(double x, double y) const;
+
+        /// 计算xy索引对应的bin索引
+        inline size_t xy_index_to_bin_index(size_t x_index, size_t y_index) const
+        {
+            return x_index + y_index * LOGIC_BASED_NUM_X_BINS;
+        }
+
+        /// 计算bin索引对应的xy索引
+        inline std::pair<size_t, size_t> bin_index_to_xy_index(size_t bin_index) const
+        {
+            size_t x_index = bin_index % LOGIC_BASED_NUM_X_BINS;
+            size_t y_index = bin_index / LOGIC_BASED_NUM_X_BINS;
+            return std::make_pair(x_index, y_index);
+        }
 
         /*****************************************************************************
          * @brief 给定两个均在同一个波门内的点迹，读取波门sigma值

@@ -1,3 +1,5 @@
+#pragma once
+
 namespace track_project
 {
     // 雷达站基础信息

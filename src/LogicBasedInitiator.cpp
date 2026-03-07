@@ -34,8 +34,7 @@ namespace track_project::trackinit
         for (size_t i = 0; i < MAX_BINS; ++i)
         {
             // 计算BINS对应的x,y坐标
-            size_t x_index = i / LOGIC_BASED_NUM_Y_BINS;
-            size_t y_index = i % LOGIC_BASED_NUM_Y_BINS;
+            auto [x_index, y_index] = bin_index_to_xy_index(i);
             double x = (x_index + 0.5) * static_cast<double>(2 * LOGIC_BASED_MAX_ABS_X / LOGIC_BASED_NUM_X_BINS) - LOGIC_BASED_MAX_ABS_X;
             double y = (y_index + 0.5) * static_cast<double>(2 * LOGIC_BASED_MAX_ABS_Y / LOGIC_BASED_NUM_Y_BINS) - LOGIC_BASED_MAX_ABS_Y;
 
@@ -78,7 +77,7 @@ namespace track_project::trackinit
         for (auto point : points)
         {
             // 查询满足条件的假设节点
-            auto candidate_nodes_ = query_nodes_by_points(point);
+            auto candidate_nodes_ = make_nodes_by_points(point);
 
             if (candidate_nodes_.empty())
             {
@@ -116,7 +115,7 @@ namespace track_project::trackinit
     }
 
     // 查询假设节点，输入当前点迹的经纬度和DOPPLER，经过反推查询所有满足要求的假设树节点
-    std::vector<LogicBasedInitiator::HypothesisNode> LogicBasedInitiator::query_nodes_by_points(const TrackPoint &point) const
+    std::vector<LogicBasedInitiator::HypothesisNode> LogicBasedInitiator::make_nodes_by_points(const TrackPoint &point) const
     {
         // 参数提取
         double x = point.x;
@@ -205,7 +204,7 @@ namespace track_project::trackinit
         {
             for (size_t y_index = bin_index_range[2]; y_index <= bin_index_range[3]; ++y_index)
             {
-                size_t bin_index = x_index * LOGIC_BASED_NUM_Y_BINS + y_index;
+                size_t bin_index = xy_index_to_bin_index(x_index, y_index);
 
                 // 遍历该bin中的假设节点
                 for (HypothesisNode *node : history_hypothesis_index_[bin_index]) // 节点是稀疏的，绝大多数情况这个for循环不会执行
@@ -254,9 +253,22 @@ namespace track_project::trackinit
                         continue; // 不满足航向条件，跳过该节点
                     }
                     // 满足条件，加入候选节点列表
-                    candidate_nodes.emplace_back(node->depth + 1, &point, node->parent_node, hypothesis_heading_start, hypothesis_heading_end, confidence);
+                    size_t temp_depth = node->depth + 1;
+                    candidate_nodes.emplace_back(temp_depth, &point, node,
+                                                 hypothesis_heading_start,
+                                                 hypothesis_heading_end,
+                                                 confidence);
                 }
             }
+        }
+
+        // 如果没有匹配假设，生成新假设
+        if (candidate_nodes.empty())
+        {
+            candidate_nodes.emplace_back(0, &point, nullptr,
+                                         heading_center_and_range.first - heading_center_and_range.second,
+                                         heading_center_and_range.first + heading_center_and_range.second,
+                                         0.0);
         }
 
         return candidate_nodes;
@@ -324,7 +336,7 @@ namespace track_project::trackinit
     {
         // 调用location_to_xy_index获取x_index和y_index
         auto [x_index, y_index] = location_to_xy_index(x, y);
-        size_t bin_index = x_index * LOGIC_BASED_NUM_Y_BINS + y_index;
+        size_t bin_index = xy_index_to_bin_index(x_index, y_index);
 
         return bin_index;
     }
@@ -356,7 +368,21 @@ namespace track_project::trackinit
 
     ProcessStatus LogicBasedInitiator::extend_hypotheses(const std::vector<HypothesisNode> &node)
     {
-        // TODO
+        if (hypothesis_layers_[0].size() + node.size() >= MAX_BINS * LOGIC_BASED_NUM_Y_BINS * LOGIC_BASED_MAX_NODE_PER_BINS)
+        {
+            // 假设节点总数超过上限，返回错误状态
+            return ProcessStatus::TOO_FEW_POINTS; // 认为点迹过多，需要删除一些假设节点，后续完善剪枝机制时可以更换成更合适的状态码
+        }
+
+        // for循环决策将node放在current_hypothesis_index_中对应的bin里，current_hypothesis_index_是一个稀疏结构，只有存在假设节点的bin才会有数据
+        for (const auto &hypothesis_node : node)
+        {
+            size_t bin_index = location_to_bin_index(hypothesis_node.associated_point->x, hypothesis_node.associated_point->y);
+
+            hypothesis_layers_[0].push_back(hypothesis_node);  //添加点迹
+            current_hypothesis_index_[bin_index].push_back(&hypothesis_layers_[0].back()); // 存放索引
+        }
+
         return ProcessStatus::SUCCESS;
     }
 
