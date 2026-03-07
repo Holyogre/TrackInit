@@ -49,7 +49,7 @@ void point_update_cv(TrackPoint &p, double time_interval_s)
     {
         double los_x = -p.x / range;
         double los_y = -p.y / range;
-        p.doppler = p.vx * los_x + p.vy * los_y;
+        p.doppler = -p.vx * los_x - p.vy * los_y;
     }
 
     // 更新经纬度
@@ -89,7 +89,7 @@ void point_update_cv_with_noise(
     {
         double los_x = -p.x / range;
         double los_y = -p.y / range;
-        p.doppler = p.vx * los_x + p.vy * los_y;
+        p.doppler = -p.vx * los_x - p.vy * los_y;
 
         // 加多普勒测量噪声
         p.doppler += gauss(gen) * doppler_noise_sigma;
@@ -114,11 +114,10 @@ void point_update_cv_with_noise(
  * @param params 参数列表，每个元素为[x, y, vx, vy]
  * @return std::vector<TrackPoint> 生成的点迹群
  *****************************************************************************/
-std::vector<TrackPoint> generate_target_points_xyv(int64_t time,const std::vector<std::array<double, 4>> &params)
+std::vector<TrackPoint> generate_target_points_xyv(int64_t time, const std::vector<std::array<double, 4>> &params)
 {
     std::vector<TrackPoint> pts;
     pts.reserve(params.size());
-
 
     for (const auto &param : params)
     {
@@ -139,7 +138,7 @@ std::vector<TrackPoint> generate_target_points_xyv(int64_t time,const std::vecto
         // 多普勒速度 (假设雷达在原点)
         double point_angle = std::atan2(p.y, p.x);
         double cog_rad = p.cog * M_PI / 180.0;
-        p.doppler = p.sog * std::cos(point_angle - cog_rad);
+        p.doppler = -(p.vx * p.x + p.vy * p.y) / hypot(p.x, p.y); // 投影到航向上
 
         // 时间戳
         p.time.milliseconds = time;
@@ -187,7 +186,7 @@ std::vector<TrackPoint> generate_target_points_polar(int64_t time,
 
         // 多普勒速度 (假设雷达在原点)
         double point_angle = std::atan2(p.y, p.x);
-        p.doppler = p.sog * std::cos(point_angle - cog_rad);
+        p.doppler = -(p.vx * p.x + p.vy * p.y) / hypot(p.x, p.y); // 投影到航向上
 
         // 时间戳
         p.time.milliseconds = time;
@@ -197,7 +196,7 @@ std::vector<TrackPoint> generate_target_points_polar(int64_t time,
 
         pts.push_back(p);
     }
-    
+
     return pts;
 }
 
@@ -248,7 +247,7 @@ std::vector<TrackPoint> generate_uniform_points(size_t n_points, int64_t time,
 
         // 多普勒速度 (假设雷达在原点)
         double point_angle = std::atan2(p.y, p.x);
-        p.doppler = p.sog * std::cos(point_angle - cog_rad);
+        p.doppler = -(p.vx * p.x + p.vy * p.y) / hypot(p.x, p.y);
 
         // 时间戳
         p.time.milliseconds = time;
@@ -375,8 +374,7 @@ std::vector<TrackPoint> generate_rayleigh_points(size_t n_points, int64_t time,
         p.vy = p.sog * std::sin(cog_rad);
 
         // 多普勒速度
-        double point_angle = std::atan2(p.y, p.x);
-        p.doppler = p.sog * std::cos(point_angle - cog_rad);
+        p.doppler = -(p.vx * p.x + p.vy * p.y) / hypot(p.x, p.y);
 
         p.time.milliseconds = time;
 

@@ -57,7 +57,7 @@ namespace track_project::trackinit
             return true;
         }
 
-        // 功能1：打印所有有内容的假设节点分布（简化版，只打印节点数量）
+        // 功能1：打印所有有内容的假设节点分布（包括内容）
         void printHypothesisDistribution() const
         {
             const auto &index = initiator_.current_hypothesis_index_;
@@ -71,9 +71,15 @@ namespace track_project::trackinit
                     size_t bin_index = x * LOGIC_BASED_NUM_Y_BINS + y; // 修正：x是列索引，y是行索引
                     const auto &nodes = index[bin_index];
 
-                    if (!nodes.empty())
+                    if (nodes.empty())
                     {
-                        LOG_INFO << "位置 [" << x << "," << y << "] (Bin Index: " << bin_index << ")，节点数量：" << nodes.size();
+                        continue;
+                    }
+
+                    LOG_INFO << "位置 [" << x << "," << y << "] (Bin Index: " << bin_index << ")，节点数量：" << nodes.size();
+                    for (const auto *node : nodes)
+                    {
+                        LOG_INFO << "    节点详细信息：" << *node;
                     }
                 }
             }
@@ -199,16 +205,17 @@ namespace track_project::trackinit
 using track_project::trackinit::test_LogicBasedInitiator;
 using namespace track_project::trackinit;
 
-TEST_CASE("基础功能正确性测试", "[FunctionalityCheck]")
+// 用来看图的结果对不对的，也不算验证
+TEST_CASE("单目标测试", "[FunctionalityCheck][single_track]")
 {
     LogicBasedInitiator initiator;
     test_LogicBasedInitiator tester(initiator);
 
     // 误差分布表格保存
-    REQUIRE(tester.saveErrorDistributionToDat("../error_distribution.dat") == true);
+    // REQUIRE(tester.saveErrorDistributionToDat("../error_distribution.dat") == true);
 
     // 生成目标航迹
-    std::vector<std::array<double, 4>> params = {{10.0, 5.0, 100, 50}};  //初始化
+    std::vector<std::array<double, 4>> params = {{10.0, 5.0, 100, 50}}; // 初始化
     std::vector<TrackPoint> track_points = generate_target_points_xyv(0, params);
 
     // 处理点迹
@@ -216,6 +223,183 @@ TEST_CASE("基础功能正确性测试", "[FunctionalityCheck]")
     ProcessStatus status = initiator.process(track_points, new_tracks);
     REQUIRE(status == ProcessStatus::SUCCESS);
 
-    tester.printHypothesisDistribution(); // 打印当前假设节点分布
+    LOG_INFO << "第一批次结果";
+    tester.printHypothesisDistribution();                                       // 打印当前假设节点分布
     tester.saveHypothesisDistributionToDat("../hypothesis_distribution_1.dat"); // 保存假设节点分布到DAT文件
+
+    for (auto point : track_points)
+    {
+        point_update_cv(point, 1000); // 更新点迹位置，模拟1秒后的观测
+    }
+    status = initiator.process(track_points, new_tracks);
+    REQUIRE(status == ProcessStatus::SUCCESS);
+
+    LOG_INFO << "第二批次结果";
+    tester.printHypothesisDistribution();                                       // 打印当前假设节点分布
+    tester.saveHypothesisDistributionToDat("../hypothesis_distribution_2.dat"); // 保存假设节点分布到DAT文件
+
+    for (auto point : track_points)
+    {
+        point_update_cv(point, 1000); // 更新点迹位置，模拟1秒后的观测
+    }
+    status = initiator.process(track_points, new_tracks);
+    REQUIRE(status == ProcessStatus::SUCCESS);
+
+    LOG_INFO << "第三批次结果";
+    tester.printHypothesisDistribution();                                       // 打印当前假设节点分布
+    tester.saveHypothesisDistributionToDat("../hypothesis_distribution_3.dat"); // 保存假设节点分布到DAT文件
+
+    for (auto point : track_points)
+    {
+        point_update_cv(point, 1000); // 更新点迹位置，模拟1秒后的观测
+    }
+    status = initiator.process(track_points, new_tracks);
+    REQUIRE(status == ProcessStatus::SUCCESS);
+
+    LOG_INFO << "第四批次结果";
+    tester.printHypothesisDistribution(); // 打印当前假设节点分布
+}
+
+TEST_CASE("多目标测试", "[FunctionalityCheck][multi_track]")
+{
+    // 随机数种子
+    unsigned int seed = Catch::getSeed();
+    // unsigned int seed = 42;
+
+    // 生成高斯分布的点迹
+    auto points1 = generate_gaussian_points(10, 0,
+                                            150, 10,
+                                            150, 10,
+                                            100.0, 50.0,
+                                            seed++);
+    auto points2 = generate_gaussian_points(10, 0,
+                                            80, 10,
+                                            80, 10,
+                                            100.0, 50.0,
+                                            seed++);
+    auto points3 = generate_gaussian_points(10, 0,
+                                            80, 10,
+                                            150, 10,
+                                            100.0, 50.0,
+                                            seed++);
+    auto points4 = generate_gaussian_points(10, 0,
+                                            150, 10,
+                                            80, 10,
+                                            100.0, 50.0,
+                                            seed++);
+    std::vector<TrackPoint> points_all; // 所有点迹
+    points_all.insert(points_all.end(), points1.begin(), points1.end());
+    // points_all.insert(points_all.end(), points2.begin(), points2.end());
+    // points_all.insert(points_all.end(), points3.begin(), points3.end());
+    // points_all.insert(points_all.end(), points4.begin(), points4.end());
+
+    // 创建算法实例
+    LogicBasedInitiator initiator;
+    test_LogicBasedInitiator tester(initiator);
+
+    // 创建航迹管理器
+    // track_project::ManagementService track_manager(0.3, 1.8, 0.3, 1.8); // 经纬度范围
+
+    // // 绑定回调函数，显示航迹
+    // alg.set_track_callback([&track_manager](const std::vector<std::array<TrackPoint, 4>> &tracks)
+    //                        { track_manager.create_track_command(const_cast<std::vector<std::array<TrackPoint, 4>> &>(tracks)); });
+
+    // 首次处理点迹
+    // track_manager.clear_all_command(); // 清空状态
+
+    // 处理点迹
+    std::vector<std::array<TrackPoint, 4>> new_tracks;
+    ProcessStatus status = initiator.process(points_all, new_tracks);
+    REQUIRE(status == ProcessStatus::SUCCESS);
+
+    LOG_INFO << "第一批次结果";
+    tester.printHypothesisDistribution();                                       // 打印当前假设节点分布
+    tester.saveHypothesisDistributionToDat("../hypothesis_distribution_1.dat"); // 保存假设节点分布到DAT文件
+
+    for (auto point : points_all)
+    {
+        point_update_cv(point, 1000); // 更新点迹位置，模拟1秒后的观测
+    }
+    status = initiator.process(points_all, new_tracks);
+    REQUIRE(status == ProcessStatus::SUCCESS);
+
+    LOG_INFO << "第二批次结果";
+    tester.printHypothesisDistribution();                                       // 打印当前假设节点分布
+    tester.saveHypothesisDistributionToDat("../hypothesis_distribution_2.dat"); // 保存假设节点分布到DAT文件
+
+    for (auto point : points_all)
+    {
+        point_update_cv(point, 1000); // 更新点迹位置，模拟1秒后的观测
+    }
+    status = initiator.process(points_all, new_tracks);
+    REQUIRE(status == ProcessStatus::SUCCESS);
+
+    LOG_INFO << "第三批次结果";
+    tester.printHypothesisDistribution();                                       // 打印当前假设节点分布
+    tester.saveHypothesisDistributionToDat("../hypothesis_distribution_3.dat"); // 保存假设节点分布到DAT文件
+
+    for (auto point : points_all)
+    {
+        point_update_cv(point, 1000); // 更新点迹位置，模拟1秒后的观测
+    }
+    status = initiator.process(points_all, new_tracks);
+    REQUIRE(status == ProcessStatus::SUCCESS);
+
+    LOG_INFO << "第四批次结果";
+    tester.printHypothesisDistribution(); // 打印当前假设节点分布
+}
+
+TEST_CASE("群目标测试", "[FunctionalityCheck][group_track]")
+{
+    LogicBasedInitiator initiator;
+    test_LogicBasedInitiator tester(initiator);
+
+    // 误差分布表格保存
+    // REQUIRE(tester.saveErrorDistributionToDat("../error_distribution.dat") == true);
+
+    // 生成目标航迹
+    std::vector<std::array<double, 4>> params = {{10.0, 5.0, 100, 50},
+                                                 {10.5, 5.5, 100, 50}}; // 初始化
+    std::vector<TrackPoint> track_points = generate_target_points_xyv(0, params);
+
+    // 处理点迹
+    std::vector<std::array<TrackPoint, 4>> new_tracks;
+    ProcessStatus status = initiator.process(track_points, new_tracks);
+    REQUIRE(status == ProcessStatus::SUCCESS);
+
+    LOG_INFO << "第一批次结果";
+    tester.printHypothesisDistribution();                                       // 打印当前假设节点分布
+    tester.saveHypothesisDistributionToDat("../hypothesis_distribution_1.dat"); // 保存假设节点分布到DAT文件
+
+    for (auto point : track_points)
+    {
+        point_update_cv(point, 1000); // 更新点迹位置，模拟1秒后的观测
+    }
+    status = initiator.process(track_points, new_tracks);
+    REQUIRE(status == ProcessStatus::SUCCESS);
+
+    LOG_INFO << "第二批次结果";
+    tester.printHypothesisDistribution();                                       // 打印当前假设节点分布
+    tester.saveHypothesisDistributionToDat("../hypothesis_distribution_2.dat"); // 保存假设节点分布到DAT文件
+
+    for (auto point : track_points)
+    {
+        point_update_cv(point, 1000); // 更新点迹位置，模拟1秒后的观测
+    }
+    status = initiator.process(track_points, new_tracks);
+    REQUIRE(status == ProcessStatus::SUCCESS);
+
+    LOG_INFO << "第三批次结果";
+    tester.printHypothesisDistribution();                                       // 打印当前假设节点分布
+    tester.saveHypothesisDistributionToDat("../hypothesis_distribution_3.dat"); // 保存假设节点分布到DAT文件
+
+    for (auto point : track_points)
+    {
+        point_update_cv(point, 1000); // 更新点迹位置，模拟1秒后的观测
+    }
+    status = initiator.process(track_points, new_tracks);
+    REQUIRE(status == ProcessStatus::SUCCESS);
+
+    LOG_INFO << "第四批次结果";
+    tester.printHypothesisDistribution(); // 打印当前假设节点分布
 }

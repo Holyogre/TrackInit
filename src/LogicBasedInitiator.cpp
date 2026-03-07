@@ -67,14 +67,14 @@ namespace track_project::trackinit
         }
 
         // 移动数据
-        shift_batches_and_hypotheses();
+        shift_batches_and_hypotheses(points);
         point_batches_[0] = points;             // 存储最新批次数据
         timestamp_batches_[0] = points[0].time; // 存储最新批次时间戳
 
         // 清空输出航迹
         new_tracks.clear();
 
-        for (auto point : points)
+        for (const auto &point : point_batches_[0])
         {
             // 查询满足条件的假设节点
             auto candidate_nodes_ = make_nodes_by_points(point);
@@ -92,26 +92,27 @@ namespace track_project::trackinit
     }
 
     // 使用move语义将旧数据和假设树整体后移，清空最新批次位置。。这步不会涉及到内存分配和释放
-    void LogicBasedInitiator::shift_batches_and_hypotheses()
+    void LogicBasedInitiator::shift_batches_and_hypotheses(const std::vector<TrackPoint> &new_points)
     {
-        // 1. 清空最旧批次的数据和假设节点
-        point_batches_[3].clear();
-        hypothesis_layers_[3].clear();
-
-        // 2. 将批次数据整体后移（索引2→3, 1→2, 0→1）
+        // 1. 所有数据后移动，最后一批数据放到最前面来
         for (int i = 3; i > 0; --i)
         {
-            // 移动点迹批次
-            point_batches_[i] = std::move(point_batches_[i - 1]);
-            // 移动假设节点层
-            hypothesis_layers_[i] = std::move(hypothesis_layers_[i - 1]);
-            // 移动时间戳
-            timestamp_batches_[i] = timestamp_batches_[i - 1];
+            std::swap(point_batches_[i], point_batches_[i - 1]);
+            std::swap(hypothesis_layers_[i], hypothesis_layers_[i - 1]);
+            std::swap(timestamp_batches_[i], timestamp_batches_[i - 1]);
         }
+        std::swap(current_hypothesis_index_, history_hypothesis_index_);
 
-        // 4. 清空最新的批次位置（索引0）
+        // 2. 清空最新的批次位置（索引0）
         point_batches_[0].clear();
         hypothesis_layers_[0].clear();
+        for (auto &bin : current_hypothesis_index_)
+        {
+            bin.clear();
+        }
+
+        // 放置数据
+        point_batches_[0] = new_points; // 存储最新批次数据
     }
 
     // 查询假设节点，输入当前点迹的经纬度和DOPPLER，经过反推查询所有满足要求的假设树节点
@@ -129,7 +130,9 @@ namespace track_project::trackinit
         double y_protected = LOGIC_BASED_PROTECTIVE_RADIUS_KM + 1.96 * sigma_y; // 保护半径，单位km
 
         // ===== 第一步：从多普勒反推可能的航向范围 =====
-        std::pair<double, double> heading_center_and_range = calculate_heading_range(x, y, doppler);
+        auto [heading_center, heading_range] = calculate_heading_range(x, y, doppler);
+        double heading_start = heading_center - heading_range;
+        double heading_end = heading_center + heading_range;
 
         // ===== 第二步：收集所有航向产生的prev点，并记录边界值 =====
         // 用于记录外推点迹的边界情况
@@ -148,9 +151,7 @@ namespace track_project::trackinit
         std::vector<prev_info> prev_info_list; // 记录涉及的prev_infonfo，包含bin索引和doppler范围
         size_t prev_bin = MAX_BINS + 1;        // 用于记录前一个bin的参数
         // 依据heading，计算doppler和边界情况
-        for (double heading = heading_center_and_range.first - heading_center_and_range.second;
-             heading <= heading_center_and_range.first + heading_center_and_range.second + heading_resolution_rad;
-             heading += heading_resolution_rad) // 每10度一个航向
+        for (double heading = heading_start; heading <= heading_end + heading_resolution_rad; heading += heading_resolution_rad)
         {
             // 计算航向对应的速度分量
             double vx = track_project::velocity_max * std::sin(heading); // 北偏东角度，sin对应x分量
@@ -160,8 +161,8 @@ namespace track_project::trackinit
             double prev_x = x - vx * dt / 1000.0; // km
             double prev_y = y - vy * dt / 1000.0; // km
 
-            // 计算doppler
-            double prev_doppler = (vx * prev_x + vy * prev_y) / hypot(prev_x, prev_y); // m/s
+            // 计算doppler，指向雷达站为正方向
+            double prev_doppler = -(vx * prev_x + vy * prev_y) / hypot(prev_x, prev_y); // m/s
 
             // 计算prev点对应的bin索引
             auto bin_index = location_to_bin_index(prev_x, prev_y);
@@ -210,7 +211,6 @@ namespace track_project::trackinit
                 for (HypothesisNode *node : history_hypothesis_index_[bin_index]) // 节点是稀疏的，绝大多数情况这个for循环不会执行
                 {
                     TrackPoint hypothesis_point = *(node->associated_point); // 假设节点关联的点迹
-                    int match_count = 0;                                     // 匹配计数器
                     double hypothesis_heading_start = node->heading_start;
                     double hypothesis_heading_end = node->heading_end;
                     std::pair<double, double> temp_heading_range(1e10, -1e10);
@@ -234,14 +234,11 @@ namespace track_project::trackinit
                         // 计算当前航向可能范围的并集
                         temp_heading_range.first = std::min(temp_heading_range.first, prev_info_cell.heading_start);
                         temp_heading_range.second = std::max(temp_heading_range.second, prev_info_cell.heading_end);
-                        match_count++;
                     }
 
-                    // 计算置信度，匹配点迹占比
-                    double confidence = static_cast<double>(match_count) / prev_info_list.size(); // 置信度，匹配点迹占比
-                    if (confidence < 0.2)                                                         // 认为无重叠航向，舍去该点
+                    if (temp_heading_range.first > 1e5) // 快速退出
                     {
-                        continue; // 不满足航向条件，跳过该节点
+                        continue;
                     }
 
                     // 和历史假设取并集
@@ -254,10 +251,7 @@ namespace track_project::trackinit
                     }
                     // 满足条件，加入候选节点列表
                     size_t temp_depth = node->depth + 1;
-                    candidate_nodes.emplace_back(temp_depth, &point, node,
-                                                 hypothesis_heading_start,
-                                                 hypothesis_heading_end,
-                                                 confidence);
+                    candidate_nodes.emplace_back(temp_depth, &point, node, hypothesis_heading_start, hypothesis_heading_end);
                 }
             }
         }
@@ -265,16 +259,13 @@ namespace track_project::trackinit
         // 如果没有匹配假设，生成新假设
         if (candidate_nodes.empty())
         {
-            candidate_nodes.emplace_back(0, &point, nullptr,
-                                         heading_center_and_range.first - heading_center_and_range.second,
-                                         heading_center_and_range.first + heading_center_and_range.second,
-                                         0.0);
+            candidate_nodes.emplace_back(0, &point, nullptr, heading_start, heading_end);
         }
 
         return candidate_nodes;
     }
 
-    // 输出航向中心，和上下波动范围
+    // 输出航向中心，和上下波动范围,单位弧度,北偏东
     std::pair<double, double> LogicBasedInitiator::calculate_heading_range(double x, double y, double doppler) const
     {
         // 计算距离和视线方向
@@ -288,7 +279,7 @@ namespace track_project::trackinit
         double heading_center = (doppler < 0) ? los_angle : los_angle + M_PI; // 以视线方向作为中心
 
         // 获取abs_doppler
-        double abs_doppler_m_s = std::abs(doppler) / 1000.0; // 转换为km/s，单位统一为km和s，避免数值不稳定
+        double abs_doppler_m_s = std::abs(doppler); // 为km和s，避免数值不稳定
 
         // 如果Doppler足够小直接给半圆范围，避免数值不稳定
         if (abs_doppler_m_s < 1e-6)
@@ -379,7 +370,7 @@ namespace track_project::trackinit
         {
             size_t bin_index = location_to_bin_index(hypothesis_node.associated_point->x, hypothesis_node.associated_point->y);
 
-            hypothesis_layers_[0].push_back(hypothesis_node);  //添加点迹
+            hypothesis_layers_[0].push_back(hypothesis_node);                              // 添加点迹
             current_hypothesis_index_[bin_index].push_back(&hypothesis_layers_[0].back()); // 存放索引
         }
 

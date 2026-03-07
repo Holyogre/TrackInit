@@ -34,10 +34,33 @@ namespace track_project::trackinit
             double heading_start; // 该假设节点对应的航向范围的起始值，单位弧度
             double heading_end;   // 该假设节点对应的航向范围的结束值，单位弧度
 
-            double confidence; // 置信度，计算方式我还没想好todo
+            double confidence = 1.0; // 置信度，计算方式我还没想好todo
 
-            HypothesisNode(size_t d, const TrackPoint *pt, HypothesisNode *parent, double h_start, double h_end, double conf)
-                : depth(d), associated_point(pt), parent_node(parent), heading_start(h_start), heading_end(h_end), confidence(conf) {}
+            HypothesisNode(size_t d, const TrackPoint *pt, HypothesisNode *parent, double h_start, double h_end)
+                : depth(d), associated_point(pt), parent_node(parent), heading_start(h_start), heading_end(h_end) {}
+
+            // debug友元<<
+            friend std::ostream &operator<<(std::ostream &os, const HypothesisNode &node)
+            {
+                os << "HypothesisNode(depth=" << node.depth
+                   << ", heading_range=[" << node.heading_start << ", " << node.heading_end << "] rad"
+                   << ", confidence=" << node.confidence
+                   << ")";
+
+                // 分开处理 associated_point
+                if (node.associated_point != nullptr)
+                {
+                    os << std::endl
+                       << "---------- Associated TrackPoint: "
+                       << *(node.associated_point);
+                }
+                else
+                {
+                    os << "null";
+                }
+
+                return os;
+            }
         };
 
     private:
@@ -85,7 +108,7 @@ namespace track_project::trackinit
          * @brief 移动批次数据和假设树，清空最旧的批次数据和对应的假设树，
          * 更新索引表,确保[0]索引对应的总是最新的数据
          *****************************************************************************/
-        void shift_batches_and_hypotheses();
+        void shift_batches_and_hypotheses(const std::vector<TrackPoint> &new_points);
 
         /*****************************************************************************
          * @brief 输入当前点迹的经纬度和DOPPLER，经过反推查询所有满足要求的假设树节点
