@@ -13,6 +13,7 @@
 #define _LOGIC_BASED_INITIATOR_HPP_
 
 #include "TrackInitBase.hpp"
+#include "../include/defsystem.h"
 
 namespace track_project::trackinit
 {
@@ -63,20 +64,22 @@ namespace track_project::trackinit
             }
         };
 
-        // 冲突假设结构体
-        struct ConflictHypothesis
-        {
-            size_t bin_index;                                               // 冲突假设所在的bin索引，多余的假设直接舍弃
-            std::array<HypothesisNode, LOGIC_BASED_MAX_NODE_PER_BINS> node; // 冲突的假设节点
-            std::vector<size_t> conflicting_points;                         // 导致冲突的点迹
-        };
-
     private:
         static constexpr size_t MAX_BINS = LOGIC_BASED_NUM_X_BINS * LOGIC_BASED_NUM_Y_BINS; // 最大允许的距离门数量乘以角度门数量
 
     public:
         LogicBasedInitiator();
         virtual ~LogicBasedInitiator() noexcept = default;
+
+        /*****************************************************************************
+         * @brief 设置回调函数，允许引入额外的航迹过滤条件
+         *
+         * @param func 回调函数，输入参数为生成的航迹，输出参数为是否保留该航迹
+         *****************************************************************************/
+        void set_filter_init_track_func(std::function<bool(const std::array<TrackPoint, 4> &)> func)
+        {
+            filter_init_track_func_ = std::move(func);
+        }
 
         /*****************************************************************************
          * @brief 检测直线，在cpp文件中
@@ -116,7 +119,7 @@ namespace track_project::trackinit
          * @brief 移动批次数据和假设树，清空最旧的批次数据和对应的假设树，
          * 更新索引表,确保[0]索引对应的总是最新的数据
          *****************************************************************************/
-        void shift_batches_and_hypotheses(const std::vector<TrackPoint> &new_points);
+        void rotate_to_new_batch(const std::vector<TrackPoint> &new_points, std::vector<std::array<TrackPoint, 4>> &new_tracks);
 
         /*****************************************************************************
          * @brief 输入当前点迹的经纬度和DOPPLER，经过反推查询所有满足要求的假设树节点
@@ -234,8 +237,13 @@ namespace track_project::trackinit
         std::vector<std::vector<HypothesisNode *>> history_hypothesis_index_; // 历史假设索引表
         std::vector<std::pair<double, double>> error_distribution_table_;     // bin的误差分布数据(sigma_x,sigma_y)
 
-        // 冲突假设列表,依据点迹关系存储冲突假设节点的指针
-        std::vector<HypothesisNode *> conflict_hypotheses_;
+        // 冲突假设列表,依据点迹索引位置存储
+        std::array<std::vector<HypothesisNode>, track_project::MAX_INPUT_POINTS> conflicts_hypothesis_;
+
+        // 回调函数，方便DIY，用于指定额外的航迹过滤条件
+        std::function<bool(const std::array<TrackPoint, 4> &)> filter_init_track_func_ =
+            [](const std::array<TrackPoint, 4> &)
+        { return true; }; // 默认不过滤任何航迹
     };
 }
 #endif //_LOGIC_BASED_INITIATOR_HPP_

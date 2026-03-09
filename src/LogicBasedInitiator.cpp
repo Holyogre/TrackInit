@@ -1,7 +1,6 @@
 #include "LogicBasedInitiator.hpp"
 
 #include <cmath>
-#include "unordered_set"
 
 #include "../include/defsystem.h"
 #include "../utils/Logger.hpp"
@@ -27,6 +26,12 @@ namespace track_project::trackinit
             history_hypothesis_index_[i].reserve(LOGIC_BASED_MAX_NODE_PER_BINS);
         }
 
+        // 初始化冲突假设列表
+        for (size_t i = 0; i < MAX_INPUT_POINTS; ++i)
+        {
+            conflicts_hypothesis_[i].reserve(LOGIC_BASED_MAX_NODE_PER_BINS * 10); // 预留假设空间
+        }
+
         clear_all(); // 初始化数据结构，清空所有数据
 
         // 误差分布表格，依据先验THETA和RHO的SIGMA计算获得
@@ -43,8 +48,8 @@ namespace track_project::trackinit
             double theta = std::atan2(y, x); // 弧度，范围 -π 到 π
 
             // 常数
-            double sigma_r = track_project::base_r_sigma_km;
-            double sigma_theta_rad = track_project::base_theta_sigma_deg * M_PI / 180.0; // 度转弧度
+            double sigma_r = track_project::BASE_R_SIGMA_KM;
+            double sigma_theta_rad = track_project::BASE_THETA_SIGMA_DEG * M_PI / 180.0; // 度转弧度
 
             // 计算x方向上的方差，\sigma^2_x=sigma^2_r \times cos^2(theta) + rho^2 \times sigma^2_r \times sin^2(theta)
             double sigma_x2 = std::pow(sigma_r * std::cos(theta), 2) +
@@ -61,18 +66,13 @@ namespace track_project::trackinit
 
     ProcessStatus LogicBasedInitiator::process(const std::vector<TrackPoint> &points, std::vector<std::array<TrackPoint, 4>> &new_tracks)
     {
-        if (points.empty())
+        if (points.empty()) // 没数据也不能把之前的结果全删了。。反正靠time更新的
         {
             return ProcessStatus::NO_POINT; // 没有点迹，这批次数据不处理，不影响后续关联
         }
 
-        // 移动数据
-        shift_batches_and_hypotheses(points);
-        point_batches_[0] = points;             // 存储最新批次数据
-        timestamp_batches_[0] = points[0].time; // 存储最新批次时间戳
-
-        // 清空输出航迹
-        new_tracks.clear();
+        // 移动所有数据，准备进行下一批次航迹起始
+        rotate_to_new_batch(points, new_tracks);
 
         for (const auto &point : point_batches_[0])
         {
@@ -96,7 +96,7 @@ namespace track_project::trackinit
     }
 
     // 使用swap交换位置，清空最新批次位置。。这步不会涉及到内存分配和释放
-    void LogicBasedInitiator::shift_batches_and_hypotheses(const std::vector<TrackPoint> &new_points)
+    void LogicBasedInitiator::rotate_to_new_batch(const std::vector<TrackPoint> &new_points, std::vector<std::array<TrackPoint, 4>> &new_tracks)
     {
         // 1. 所有数据后移动，最后一批数据放到最前面来
         for (int i = 3; i > 0; --i)
@@ -115,8 +115,18 @@ namespace track_project::trackinit
             bin.clear();
         }
 
-        // 放置数据
-        point_batches_[0] = new_points; // 存储最新批次数据
+        // 3. 清空冲突假设列表
+        for (auto &conflict_ : conflicts_hypothesis_)
+        {
+            conflict_.clear();
+        }
+
+        // 4.清空输出航迹
+        new_tracks.clear();
+
+        // 4. 放置数据
+        point_batches_[0] = new_points;             // 存储最新批次数据
+        timestamp_batches_[0] = new_points[0].time; // 存储最新批次时间戳
     }
 
     // 查询假设节点，输入当前点迹的经纬度和DOPPLER，经过反推查询所有满足要求的假设树节点
@@ -159,8 +169,8 @@ namespace track_project::trackinit
         for (double heading = heading_start; heading <= heading_end + heading_resolution_rad; heading += heading_resolution_rad)
         {
             // 计算航向对应的速度分量
-            double vx = track_project::velocity_max * std::sin(heading); // 北偏东角度，sin对应x分量
-            double vy = track_project::velocity_max * std::cos(heading); // 北偏东角度，cos对应y分量
+            double vx = track_project::VELOCITY_MAX * std::sin(heading); // 北偏东角度，sin对应x分量
+            double vy = track_project::VELOCITY_MAX * std::cos(heading); // 北偏东角度，cos对应y分量
 
             // 反推prev点位置
             double prev_x = x - vx * dt / 1000.0; // km
@@ -223,8 +233,9 @@ namespace track_project::trackinit
                     for (const auto &prev_info_cell : prev_info_list) // 至多30次循环
                     {
                         // 1. 判断doppler是否在范围内
-                        if (hypothesis_point.doppler < prev_info_cell.doppler_min - LOGIC_BASED_PROTECTIVE_DOPPLER_M_S ||
-                            hypothesis_point.doppler > prev_info_cell.doppler_max + LOGIC_BASED_PROTECTIVE_DOPPLER_M_S)
+                        constexpr double doppler_tolerance = 1.96 * track_project::BASE_DOPPLER_TOLERANCE_M_S + LOGIC_BASED_PROTECTIVE_DOPPLER_M_S;
+                        if (hypothesis_point.doppler < prev_info_cell.doppler_min - doppler_tolerance ||
+                            hypothesis_point.doppler > prev_info_cell.doppler_max + doppler_tolerance)
                         {
                             continue; // 不满足doppler条件，跳过该节点
                         }
@@ -296,7 +307,7 @@ namespace track_project::trackinit
         }
 
         // 对于过大多普勒只给一个方向
-        if (abs_doppler_m_s > track_project::velocity_max - 1e-3)
+        if (abs_doppler_m_s > track_project::VELOCITY_MAX - 1e-3)
         {
             double heading_range = 0.0; // 单一方向
 
@@ -304,7 +315,7 @@ namespace track_project::trackinit
         }
 
         // 最小可能的夹角（对应最大船速）
-        double cos_aspect_angle = abs_doppler_m_s / track_project::velocity_max;
+        double cos_aspect_angle = abs_doppler_m_s / track_project::VELOCITY_MAX;
         cos_aspect_angle = std::clamp(cos_aspect_angle, 0.0, 1.0); // 确保在有效范围内
         double aspect_angle = std::acos(cos_aspect_angle);         // 航向与径向的夹角
 
@@ -362,7 +373,7 @@ namespace track_project::trackinit
         return {x_min_index, x_max_index, y_min_index, y_max_index};
     }
 
-    ProcessStatus LogicBasedInitiator::extend_hypotheses(const std::vector<HypothesisNode> &node)
+    ProcessStatus LogicBasedInitiator::preprocess_nodes(std::vector<HypothesisNode> &node, std::vector<std::array<TrackPoint, 4>> &new_tracks)
     {
         if (hypothesis_layers_[0].size() + node.size() >= MAX_BINS * LOGIC_BASED_NUM_Y_BINS * LOGIC_BASED_MAX_NODE_PER_BINS ||
             node.size() >= LOGIC_BASED_MAX_NODE_PER_BINS)
@@ -378,12 +389,13 @@ namespace track_project::trackinit
         }
 
         // 遍历node列表，往前搜索一个假设，若前置假设来源于同一个点，存放到冲突列表中
-        struct temp_conflict
+        struct ConflictGroup
         {
-            TrackPoint *prev_point_pos;
-            std::vector<size_t> node_index;
+            const TrackPoint *prev_point;
+            std::vector<size_t> node_indices;
         };
-        std::vector<temp_conflict> conflict_node_list;
+        std::vector<ConflictGroup> conflict_groups; // 存储冲突组，每组包含相同前置点迹的假设节点索引
+        conflict_groups.reserve(node_size);
         for (size_t index = 0; index < node_size; index++)
         {
             const HypothesisNode &possible_node = node[index];
@@ -400,33 +412,50 @@ namespace track_project::trackinit
             case 2: // 二、三层假设可能冲突，放入冲突区域
             case 3:
             {
-                bool is_conflict = false;
-                const TrackPoint *possible_node_prev_point_pos = possible_node.parent_node->associated_point;
-                for (auto &conflict_node : conflict_node_list)
+                const TrackPoint *prev_point = possible_node.parent_node->associated_point;
+
+                // 查找是否已有这个前置点迹的组
+                auto it = std::find_if(conflict_groups.begin(), conflict_groups.end(),
+                                       [prev_point](const ConflictGroup &g)
+                                       { return g.prev_point == prev_point; });
+
+                if (it != conflict_groups.end())
                 {
-                    if (conflict_node.prev_point_pos == possible_node_prev_point_pos)
-                    {
-                        is_conflict = true;
-                        conflict_node.node_index.push_back(index);
-                        break;
-                    }
+                    it->node_indices.push_back(index);
                 }
-                if (!is_conflict)
+                else
                 {
-                    conflict_node_list.emplace_back(possible_node_prev_point_pos, index);
+                    conflict_groups.push_back({prev_point, {index}});
                 }
                 break;
             }
             default:
             {
                 return ProcessStatus::WRONG_PREV_NODE;
-                break;
             }
             }
         }
 
-        //遍历冲突列表，对于无多个假设项，直接存入，对于多个假设项，存入冲突假设列表
-        //todo
+        // 遍历冲突列表，对于无多个假设项，直接存入，对于多个假设项，存入冲突假设列表
+        for (const auto &group : conflict_groups)
+        {
+            if (group.node_indices.size() == 1) // 无冲突，直接放入
+            {
+                const HypothesisNode &node_to_add = node[group.node_indices[0]];
+                hypothesis_layers_[0].push_back(node_to_add);
+                size_t bin_index = node_to_add.bin_index;
+                current_hypothesis_index_[bin_index].push_back(&hypothesis_layers_[0].back()); // 存放索引
+            }
+            else // 不然，依据该假设的前一个假设的点迹在point_batches_[1]中的位置，存放到对应的冲突列表中
+            {
+                const TrackPoint *prev_point = group.prev_point;
+                size_t prev_point_index = static_cast<size_t>(prev_point - point_batches_[1].data()); // 计算前置点迹在上一批次中的索引
+                for (size_t index : group.node_indices)
+                {
+                    conflicts_hypothesis_[prev_point_index].push_back(node[index]); // 显式拷贝
+                }
+            }
+        }
 
         return ProcessStatus::SUCCESS;
     }
@@ -446,6 +475,12 @@ namespace track_project::trackinit
         {
             current_hypothesis_index_[i].clear();
             history_hypothesis_index_[i].clear();
+        }
+
+        // 清空冲突列表
+        for (auto &conflict_ : conflicts_hypothesis_)
+        {
+            conflict_.clear();
         }
 
         // 误差分布表格不清空，因为这个不随数据到来二变化，只收到build_error_distribution_table的调用才会更新

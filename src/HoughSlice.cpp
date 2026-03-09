@@ -310,22 +310,22 @@ namespace track_project::trackinit
             double distance_m = std::sqrt(point.x * point.x + point.y * point.y) * 1000.0;
 
             // 计算航迹在 (BATCH_NUM-1) 个时间间隔内可能移动的最大距离
-            double max_displacement = track_project::velocity_max * dt * (HOUGHSLICE_BATCH_NUM - 1);
+            double max_displacement = track_project::VELOCITY_MAX * dt * (HOUGHSLICE_BATCH_NUM - 1);
 
             // 计算视线角变化 α = arctan(max_displacement / distance)
             double alpha = std::atan2(max_displacement, distance_m);
 
             // 计算多普勒速度的极限变化量 Δv = max_velocity * (1 - cos(α))
-            double delta_v = track_project::velocity_max * (1.0 - std::cos(alpha));
+            double delta_v = track_project::VELOCITY_MAX * (1.0 - std::cos(alpha));
 
-            // 转换为位数：doppler_tolerance_bits = round((Δv / velocity_max) * DOPPLER_BIT_NUM) //向上取整
-            doppler_tolerance_bits = static_cast<int>(std::round((delta_v / track_project::velocity_max) * HOUGHSLICE_DOPPLER_BIT_NUM));
+            // 转换为位数：doppler_tolerance_bits = round((Δv / VELOCITY_MAX) * DOPPLER_BIT_NUM) //向上取整
+            doppler_tolerance_bits = static_cast<int>(std::round((delta_v / track_project::VELOCITY_MAX) * HOUGHSLICE_DOPPLER_BIT_NUM));
             doppler_tolerance_bits = std::clamp(doppler_tolerance_bits + 1, 1, static_cast<int>(HOUGHSLICE_DOPPLER_BIT_NUM) - 1);
         }
 
-        // 依据doppler和velocity_max计算所有可能的航向角度序列
+        // 依据doppler和VELOCITY_MAX计算所有可能的航向角度序列
         double abs_doppler = std::abs(point.doppler); // 取绝对值，单位m/s
-        if (abs_doppler > track_project::velocity_max)
+        if (abs_doppler > track_project::VELOCITY_MAX)
         {
             return; // 速度超过最大值，跳过该点迹
         }
@@ -351,7 +351,7 @@ namespace track_project::trackinit
         }
 
         // 计算可能的速度方向与视线方向的夹角,abs_doppler不可能为0，此时检测不出来
-        double angle_rad = std::acos(abs_doppler / track_project::velocity_max); // 计算夹角，弧度，范围[0,pi/2)
+        double angle_rad = std::acos(abs_doppler / track_project::VELOCITY_MAX); // 计算夹角，弧度，范围[0,pi/2)
         angle_rad = std::clamp(angle_rad, 1e-4, M_PI / 2.0 - 1e-4);              // 确保夹角在合理范围内
 
         double heading1 = base_dir_rad - angle_rad;
@@ -417,7 +417,7 @@ namespace track_project::trackinit
         angle_idx_end = (angle_idx_end < (HOUGH_THETA_DIM - 2)) ? (angle_idx_end + 2) : HOUGH_THETA_DIM - 1;
 
         // 计算速度索引 - 由宏控制位数
-        double ratio = doppler / track_project::velocity_max;
+        double ratio = doppler / track_project::VELOCITY_MAX;
         ratio = std::clamp(ratio, -1.0, 1.0);
 
         // 根据HOUGHSLICE_DOPPLER_BIT_NUM计算每侧级别数
@@ -582,12 +582,12 @@ namespace track_project::trackinit
 
             if (bit < HALF_BITS)
             {
-                return (-1.0 + bit * SPEED_STEP) * track_project::velocity_max;
+                return (-1.0 + bit * SPEED_STEP) * track_project::VELOCITY_MAX;
             }
             else
             {
                 size_t level = bit - HALF_BITS;
-                return ((level + 1) * SPEED_STEP) * track_project::velocity_max;
+                return ((level + 1) * SPEED_STEP) * track_project::VELOCITY_MAX;
             }
         };
 
@@ -689,7 +689,7 @@ namespace track_project::trackinit
     {
         const double CENTER_X = cluster.center_x;
         const double CENTER_Y = cluster.center_y;
-        const double DOPPLER_TOL = 2 * track_project::velocity_max / HOUGHSLICE_DOPPLER_BIT_NUM; 
+        const double DOPPLER_TOL = 2 * track_project::VELOCITY_MAX / HOUGHSLICE_DOPPLER_BIT_NUM; 
 
         // 点迹要增加避免重复的逻辑，不能总是靠边界来分辨，设定每个点迹最多允许使用HOUGHSLICE_POINT_REUSE_LIMIT次
 
@@ -735,7 +735,7 @@ namespace track_project::trackinit
                     double alpha = std::atan2(max_displacement, hypot(point.x, point.y) * 1000.0); // 距离转换为米
 
                     // 计算多普勒速度的极限变化量 Δv = max_velocity * (1 - cos(α))
-                    double delta_v = track_project::velocity_max * (1.0 - std::cos(alpha));
+                    double delta_v = track_project::VELOCITY_MAX * (1.0 - std::cos(alpha));
 
                     // 为了弥补多次转换导致的精度损失问题，可能导致航迹拥簇
                     if (std::abs(point_rho - rho) < HOUGHSLICE_RHO_CLUSTER_TOL_KM && std::abs(point.doppler - doppler) < delta_v + DOPPLER_TOL)

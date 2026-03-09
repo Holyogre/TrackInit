@@ -11,24 +11,24 @@ constexpr double KM_PER_DEGREE = 111.0;
 void xy2ll(double x, double y, double &lon, double &lat)
 {
     // 反向转换：假设1度经纬对应固定km比例
-    lon = x / KM_PER_DEGREE + track_project::base_longitude;
+    lon = x / KM_PER_DEGREE + track_project::BASE_LONGITUDE;
 
-    double cos_base = std::cos(track_project::base_latitude * M_PI / 180.0);
+    double cos_base = std::cos(track_project::BASE_LATITUDE * M_PI / 180.0);
     if (std::abs(cos_base) < 1e-9)
     {
-        lat = track_project::base_latitude;
+        lat = track_project::BASE_LATITUDE;
     }
     else
     {
-        lat = y / (KM_PER_DEGREE * cos_base) + track_project::base_latitude;
+        lat = y / (KM_PER_DEGREE * cos_base) + track_project::BASE_LATITUDE;
     }
 }
 
 void ll2xy(double lon, double lat, double &x, double &y)
 {
     // 简单的线性转换，假设1度经度约等于111km，1度纬度约等于111km
-    x = (lon - track_project::base_longitude) * KM_PER_DEGREE;
-    y = (lat - track_project::base_latitude) * KM_PER_DEGREE * std::cos(track_project::base_latitude * M_PI / 180.0);
+    x = (lon - track_project::BASE_LONGITUDE) * KM_PER_DEGREE;
+    y = (lat - track_project::BASE_LATITUDE) * KM_PER_DEGREE * std::cos(track_project::BASE_LATITUDE * M_PI / 180.0);
 }
 
 void sync_lon_lat(TrackPoint &p)
