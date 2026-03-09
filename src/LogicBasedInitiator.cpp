@@ -84,14 +84,18 @@ namespace track_project::trackinit
                 continue; // 没有满足条件的假设节点，继续处理下一个点迹
             }
 
-            // 没有满足条件的假设节点，以该点迹为基础生成新的假设树
-            ProcessStatus status = extend_hypotheses(candidate_nodes_);
+            // 预处理假设节点，对于无可置疑的假设节点直接拓展假设，或直接输出为航迹
+            ProcessStatus status = preprocess_nodes(candidate_nodes_, new_tracks);
+            if (status != ProcessStatus::SUCCESS)
+            {
+                return status; // 如果预处理失败，直接返回错误码
+            }
         }
 
         return ProcessStatus::SUCCESS;
     }
 
-    // 使用move语义将旧数据和假设树整体后移，清空最新批次位置。。这步不会涉及到内存分配和释放
+    // 使用swap交换位置，清空最新批次位置。。这步不会涉及到内存分配和释放
     void LogicBasedInitiator::shift_batches_and_hypotheses(const std::vector<TrackPoint> &new_points)
     {
         // 1. 所有数据后移动，最后一批数据放到最前面来
@@ -121,11 +125,12 @@ namespace track_project::trackinit
         // 参数提取
         double x = point.x;
         double y = point.y;
+        size_t bin_index = location_to_bin_index(x, y);
         double doppler = point.doppler;                                                                                    // m/s
         double dt = static_cast<double>(timestamp_batches_[0].milliseconds - timestamp_batches_[1].milliseconds) / 1000.0; // s
         double heading_resolution_rad = LOGIC_BASED_HEADING_RESOLUTION_DEG * M_PI / 180.0;                                 // 航向分辨率，单位弧度
         // sigma_x,sigma_y参数提取
-        auto [sigma_x, sigma_y] = error_distribution_table_[location_to_bin_index(x, y)];
+        auto [sigma_x, sigma_y] = error_distribution_table_[bin_index];
         double x_protected = LOGIC_BASED_PROTECTIVE_RADIUS_KM + 1.96 * sigma_x; // 保护半径，单位km
         double y_protected = LOGIC_BASED_PROTECTIVE_RADIUS_KM + 1.96 * sigma_y; // 保护半径，单位km
 
@@ -138,7 +143,7 @@ namespace track_project::trackinit
         // 用于记录外推点迹的边界情况
         struct prev_info
         {
-            size_t bin_index;
+            size_t prev_bin_index;
             double x, y;
             double heading_start, heading_end;
             double bias_x_max, bias_y_max;
@@ -165,18 +170,18 @@ namespace track_project::trackinit
             double prev_doppler = -(vx * prev_x + vy * prev_y) / hypot(prev_x, prev_y); // m/s
 
             // 计算prev点对应的bin索引
-            auto bin_index = location_to_bin_index(prev_x, prev_y);
+            auto prev_bin_index = location_to_bin_index(prev_x, prev_y);
 
             // 若无新点，存放新点，同时更新边界值
-            if (bin_index != prev_bin)
+            if (prev_bin_index != prev_bin)
             {
-                prev_bin = bin_index;
-                auto bin_error = error_distribution_table_[bin_index]; // 该bin对应的误差分布参数
+                prev_bin = prev_bin_index;
+                auto bin_error = error_distribution_table_[prev_bin_index]; // 该bin对应的误差分布参数
                 double temp_bias_x_max = x_protected + 1.96 * bin_error.first;
                 double temp_bias_y_max = y_protected + 1.96 * bin_error.second;
                 double heading_start = heading;
                 double heading_end = heading;
-                prev_info_list.push_back({bin_index, prev_x, prev_y, heading_start, heading_end, temp_bias_x_max, temp_bias_y_max, prev_doppler, prev_doppler});
+                prev_info_list.push_back({prev_bin_index, prev_x, prev_y, heading_start, heading_end, temp_bias_x_max, temp_bias_y_max, prev_doppler, prev_doppler});
             }
             else // 该点已经存在，更新边界值
             {
@@ -185,8 +190,8 @@ namespace track_project::trackinit
                 temp_prev_info.y = (prev_y + temp_prev_info.y) / 2.0;
                 temp_prev_info.heading_start = std::min(temp_prev_info.heading_start, heading);
                 temp_prev_info.heading_end = std::max(temp_prev_info.heading_end, heading);
-                temp_prev_info.bias_x_max = std::max(temp_prev_info.bias_x_max, x_protected + 1.96 * error_distribution_table_[bin_index].first);
-                temp_prev_info.bias_y_max = std::max(temp_prev_info.bias_y_max, y_protected + 1.96 * error_distribution_table_[bin_index].second);
+                temp_prev_info.bias_x_max = std::max(temp_prev_info.bias_x_max, x_protected + 1.96 * error_distribution_table_[prev_bin_index].first);
+                temp_prev_info.bias_y_max = std::max(temp_prev_info.bias_y_max, y_protected + 1.96 * error_distribution_table_[prev_bin_index].second);
                 temp_prev_info.doppler_min = std::min(temp_prev_info.doppler_min, prev_doppler);
                 temp_prev_info.doppler_max = std::max(temp_prev_info.doppler_max, prev_doppler);
             }
@@ -205,10 +210,10 @@ namespace track_project::trackinit
         {
             for (size_t y_index = bin_index_range[2]; y_index <= bin_index_range[3]; ++y_index)
             {
-                size_t bin_index = xy_index_to_bin_index(x_index, y_index);
+                size_t hypothesis_bin_index = xy_index_to_bin_index(x_index, y_index);
 
                 // 遍历该bin中的假设节点
-                for (HypothesisNode *node : history_hypothesis_index_[bin_index]) // 节点是稀疏的，绝大多数情况这个for循环不会执行
+                for (HypothesisNode *node : history_hypothesis_index_[hypothesis_bin_index]) // 节点是稀疏的，绝大多数情况这个for循环不会执行
                 {
                     TrackPoint hypothesis_point = *(node->associated_point); // 假设节点关联的点迹
                     double hypothesis_heading_start = node->heading_start;
@@ -251,7 +256,7 @@ namespace track_project::trackinit
                     }
                     // 满足条件，加入候选节点列表
                     size_t temp_depth = node->depth + 1;
-                    candidate_nodes.emplace_back(temp_depth, &point, node, hypothesis_heading_start, hypothesis_heading_end);
+                    candidate_nodes.emplace_back(temp_depth, bin_index, &point, node, hypothesis_heading_start, hypothesis_heading_end);
                 }
             }
         }
@@ -259,7 +264,7 @@ namespace track_project::trackinit
         // 如果没有匹配假设，生成新假设
         if (candidate_nodes.empty())
         {
-            candidate_nodes.emplace_back(0, &point, nullptr, heading_start, heading_end);
+            candidate_nodes.emplace_back(0, bin_index, &point, nullptr, heading_start, heading_end);
         }
 
         return candidate_nodes;
@@ -359,27 +364,76 @@ namespace track_project::trackinit
 
     ProcessStatus LogicBasedInitiator::extend_hypotheses(const std::vector<HypothesisNode> &node)
     {
-        if (hypothesis_layers_[0].size() + node.size() >= MAX_BINS * LOGIC_BASED_NUM_Y_BINS * LOGIC_BASED_MAX_NODE_PER_BINS)
+        if (hypothesis_layers_[0].size() + node.size() >= MAX_BINS * LOGIC_BASED_NUM_Y_BINS * LOGIC_BASED_MAX_NODE_PER_BINS ||
+            node.size() >= LOGIC_BASED_MAX_NODE_PER_BINS)
         {
             // 假设节点总数超过上限，返回错误状态
-            return ProcessStatus::TOO_FEW_POINTS; // 认为点迹过多，需要删除一些假设节点，后续完善剪枝机制时可以更换成更合适的状态码
+            return ProcessStatus::TOO_MANY_HYPOTHSIS;
         }
 
-        // for循环决策将node放在current_hypothesis_index_中对应的bin里，current_hypothesis_index_是一个稀疏结构，只有存在假设节点的bin才会有数据
-        for (const auto &hypothesis_node : node)
+        size_t node_size = node.size();
+        if (node_size == 0)
         {
-            size_t bin_index = location_to_bin_index(hypothesis_node.associated_point->x, hypothesis_node.associated_point->y);
-
-            hypothesis_layers_[0].push_back(hypothesis_node);                              // 添加点迹
-            current_hypothesis_index_[bin_index].push_back(&hypothesis_layers_[0].back()); // 存放索引
+            return ProcessStatus::SUCCESS;
         }
+
+        // 遍历node列表，往前搜索一个假设，若前置假设来源于同一个点，存放到冲突列表中
+        struct temp_conflict
+        {
+            TrackPoint *prev_point_pos;
+            std::vector<size_t> node_index;
+        };
+        std::vector<temp_conflict> conflict_node_list;
+        for (size_t index = 0; index < node_size; index++)
+        {
+            const HypothesisNode &possible_node = node[index];
+            switch (possible_node.depth)
+            {
+            case 0: // 第零层假设必然不冲突，直接放入对应bin就是了
+            case 1: // 第一层假设必然不冲突，因为前置点迹必然不同
+            {
+                hypothesis_layers_[0].push_back(possible_node);
+                size_t bin_index = possible_node.bin_index;
+                current_hypothesis_index_[bin_index].push_back(&hypothesis_layers_[0].back()); // 存放索引
+                break;
+            }
+            case 2: // 二、三层假设可能冲突，放入冲突区域
+            case 3:
+            {
+                bool is_conflict = false;
+                const TrackPoint *possible_node_prev_point_pos = possible_node.parent_node->associated_point;
+                for (auto &conflict_node : conflict_node_list)
+                {
+                    if (conflict_node.prev_point_pos == possible_node_prev_point_pos)
+                    {
+                        is_conflict = true;
+                        conflict_node.node_index.push_back(index);
+                        break;
+                    }
+                }
+                if (!is_conflict)
+                {
+                    conflict_node_list.emplace_back(possible_node_prev_point_pos, index);
+                }
+                break;
+            }
+            default:
+            {
+                return ProcessStatus::WRONG_PREV_NODE;
+                break;
+            }
+            }
+        }
+
+        //遍历冲突列表，对于无多个假设项，直接存入，对于多个假设项，存入冲突假设列表
+        //todo
 
         return ProcessStatus::SUCCESS;
     }
 
     void LogicBasedInitiator::clear_all()
     {
-        // 预留空间
+        // 清空存储信息
         for (size_t i = 0; i < 4; ++i)
         {
             point_batches_[i].clear();
@@ -387,7 +441,7 @@ namespace track_project::trackinit
             timestamp_batches_[i] = Timestamp();
         }
 
-        // 初始化索引表，避免内存碎片，一次性开到位
+        // 名为vector实际作为array使用的区域，需要逐个清空
         for (size_t i = 0; i < MAX_BINS; ++i)
         {
             current_hypothesis_index_[i].clear();

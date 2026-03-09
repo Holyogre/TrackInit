@@ -17,20 +17,25 @@ namespace track_project::trackinit
     constexpr double HOUGHSLICE_RHO_CLUSTER_TOL_KM = 0.1;    // 霍夫空间中检测到的直线参数凝聚时的距离阈值（公里），必须可以被距离分辨率整除
 
     // ============ LOGIC BASED 空间参数 ============
-    constexpr double LOGIC_BASED_MAX_ABS_X = 400.0;            // 最大的X坐标的绝对值上限（KM），以雷达站为原点，正东向右
-    constexpr double LOGIC_BASED_MAX_ABS_Y = 400.0;            // 最大的Y坐标的绝对值上限（KM），以雷达站为原点，正北向上
-    constexpr size_t LOGIC_BASED_NUM_X_BINS = 800;             // X轴方向离散单元数量，O(N)严重影响性能和内存占用
-    constexpr size_t LOGIC_BASED_NUM_Y_BINS = 800;             // Y轴方向离散单元数量，O(N)严重影响性能和内存占用
+    constexpr double LOGIC_BASED_MAX_ABS_X = 400.0; // 最大的X坐标的绝对值上限（KM），以雷达站为原点，正东向右
+    constexpr double LOGIC_BASED_MAX_ABS_Y = 400.0; // 最大的Y坐标的绝对值上限（KM），以雷达站为原点，正北向上
+    constexpr size_t LOGIC_BASED_NUM_X_BINS = 800;  // X轴方向离散单元数量，O(N)严重影响性能和内存占用
+    constexpr size_t LOGIC_BASED_NUM_Y_BINS = 800;  // Y轴方向离散单元数量，O(N)严重影响性能和内存占用
+    // ============ LOGIC BASED 外推分辨率参数 ============
     constexpr double LOGIC_BASED_HEADING_RESOLUTION_DEG = 0.1; // 航向离散分辨率（度），迅速提高虚假航迹分辨率，但是计算复杂度也会迅速提升，O(N)
-    constexpr size_t LOGIC_BASED_MAX_NODE_PER_BINS = 50;       // 每个波门中允许拥有的最大假设数量,O(N)
+    constexpr size_t LOGIC_BASED_MAX_NODE_PER_BINS = 100;      // 每个波门中允许拥有的最大假设数量,建议设置为n^2，减枝一次O(N)
     constexpr double LOGIC_BASED_PROTECTIVE_RADIUS_KM = 0.1;   // 保护半径（KM），误差分布函数不一定准确，以防万一设置的扩张值，谨慎修改，非DEBUG最好是0
     constexpr double LOGIC_BASED_PROTECTIVE_DOPPLER_M_S = 0.1; // doppler保护半径,这个保护半径用于抑制波动值，可以适当给大点
+    // ============ LOGIC BASED 减枝参数 ============
+    constexpr double LOGIC_BASED_CONFLICT_THETA_RANGE = 5;   // 冲突假设航向范围，务必远大于雷达站角度分辨率，不然无减枝作用
+    constexpr double LOGIC_BASED_CONFLICT_RHO_RANGE = 5;     // 冲突假设角度范围，务必远大于雷达站距离分辨率，不然无减枝作用
+    constexpr size_t LOGIC_BASED_MAX_HYPOTHESIS_NUM = 10000; // 最大假设数量，超过这个数量就直接放弃，避免算力浪费
 
     /*****************************************************************************
      * @brief 状态码
      * 1. 0：处理成功，有航迹输出
      * 2. 1000-1100：霍夫变换处理成功，但推荐更换处理方式
-     * 3.
+     * 3. 2000-2100：逻辑法处理成功，但推荐更换处理方式
      *****************************************************************************/
     enum class ProcessStatus : std::int32_t
     {
@@ -42,8 +47,9 @@ namespace track_project::trackinit
         TOO_LARGE_CLUSTER = 1003,    // 过大的聚类区域，群目标存在丢失情况，考虑更换参数
 
         // 逻辑法状态码
-        NO_HYPOTHESIS = 2001,  // 没有生成任何假设
-        TOO_FEW_POINTS = 2002, // 有假设被删除了，因为点迹过多装不下
+        NO_HYPOTHESIS = 2001,      // 没有生成任何假设
+        TOO_MANY_HYPOTHSIS = 2002, // 单波门中假设超过上限，有假设因此被舍弃
+        WRONG_PREV_NODE = 2003,    // 前置假设节点存在异常
 
         // 其他
         NO_POINT = 9001, // 没有点迹，无法处理

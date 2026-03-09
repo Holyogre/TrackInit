@@ -26,8 +26,8 @@ namespace track_project::trackinit
         struct HypothesisNode
         {
 
-            size_t depth; // 节点深度(0-3)
-
+            size_t depth;                       // 节点深度(0-3)
+            size_t bin_index;                   // 该节点所在的bin索引，以关联点迹为准
             const TrackPoint *associated_point; // 关联的观测点迹
             HypothesisNode *parent_node;        // 上一深度节点
 
@@ -36,8 +36,8 @@ namespace track_project::trackinit
 
             double confidence = 1.0; // 置信度，计算方式我还没想好todo
 
-            HypothesisNode(size_t d, const TrackPoint *pt, HypothesisNode *parent, double h_start, double h_end)
-                : depth(d), associated_point(pt), parent_node(parent), heading_start(h_start), heading_end(h_end) {}
+            HypothesisNode(size_t d, size_t b, const TrackPoint *pt, HypothesisNode *parent, double h_start, double h_end)
+                : depth(d), bin_index(b), associated_point(pt), parent_node(parent), heading_start(h_start), heading_end(h_end) {}
 
             // debug友元<<
             friend std::ostream &operator<<(std::ostream &os, const HypothesisNode &node)
@@ -61,6 +61,14 @@ namespace track_project::trackinit
 
                 return os;
             }
+        };
+
+        // 冲突假设结构体
+        struct ConflictHypothesis
+        {
+            size_t bin_index;                                               // 冲突假设所在的bin索引，多余的假设直接舍弃
+            std::array<HypothesisNode, LOGIC_BASED_MAX_NODE_PER_BINS> node; // 冲突的假设节点
+            std::vector<size_t> conflicting_points;                         // 导致冲突的点迹
         };
 
     private:
@@ -190,6 +198,17 @@ namespace track_project::trackinit
                                                         double x_protected, double y_protected) const;
 
         /*****************************************************************************
+         * @brief 对于满足条件的假设节点，进行预处理：
+         * 1、 对于无可置疑的假设节点直接拓展假设，或直接输出为航迹
+         * 2、 当假设空间不足的时候，提前终止程序，输出错误码，避免后续的计算浪费算力
+         *
+         * @param candidate_nodes 候选节点
+         * @param new_tracks 输出参数，存储生成的新航迹
+         * @return ProcessStatus 错误码，SUCCESS表示成功，TOO_MANY_HYPOTHSIS表示假设空间不足
+         *****************************************************************************/
+        ProcessStatus preprocess_nodes(std::vector<HypothesisNode> &candidate_nodes, std::vector<std::array<TrackPoint, 4>> &new_tracks);
+
+        /*****************************************************************************
          * @brief 扩展假设树，若有点迹未被存放到任何假设树中，就以这些点迹为基础生成新的假设树
          *
          * @param node 待处理的假设节点
@@ -210,10 +229,13 @@ namespace track_project::trackinit
         std::array<std::vector<HypothesisNode>, 4> hypothesis_layers_; // 各个假设节点存储区域
         std::array<Timestamp, 4> timestamp_batches_;                   // 每批点迹的时间戳，单位秒
 
-        // 假设列表，大小默认为MAX_BINS，按波门分割，不用ARRAY是因为容易栈溢出
-        std::vector<std::vector<HypothesisNode *>> current_hypothesis_index_; // 当前假设索引表，
+        // 假设列表，大小默认为MAX_BINS，按波门分割，不用ARRAY是因为容易栈溢出，假设节点数量由ConflictHypothesis予以约束
+        std::vector<std::vector<HypothesisNode *>> current_hypothesis_index_; // 当前假设索引表
         std::vector<std::vector<HypothesisNode *>> history_hypothesis_index_; // 历史假设索引表
         std::vector<std::pair<double, double>> error_distribution_table_;     // bin的误差分布数据(sigma_x,sigma_y)
+
+        // 冲突假设列表,依据点迹关系存储冲突假设节点的指针
+        std::vector<HypothesisNode *> conflict_hypotheses_;
     };
 }
 #endif //_LOGIC_BASED_INITIATOR_HPP_
