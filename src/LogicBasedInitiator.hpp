@@ -218,6 +218,29 @@ namespace track_project::trackinit
          *****************************************************************************/
         ProcessStatus reprocess_conflict_nodes(std::vector<std::array<TrackPoint, 4>> &new_tracks);
 
+        /*****************************************************************************
+         * @brief 用于评估运动一致性，依据dx,dy的变化方差，计算一个得分，得分越高说明运动一致性越好
+         *
+         * @param node 输入假设节点，要求depth至少为2，且每个节点都必须关联一个观测点迹
+         * @return double MSE分数，用于反应运动一致性
+         *****************************************************************************/
+        double evaluate_motion_consistency(const HypothesisNode &node);
+
+        /*****************************************************************************
+         * @brief 评估航向一致性，依据当前的heading缩小的情况和之前的heading进行比较
+         * 越小说明heading信息熵在减小，可能性在缩小，越不推荐
+         * 但是这种索引方法对于doppler小的点迹非常不友好，因为doppler小的点迹对应的heading范围非常大
+         * 这个信息熵是用于滤除错误点迹的最后手段，滥用可能导致正确航迹被剔除
+         *
+         * @param node 输入假设节点
+         * @return double 航向范围得分
+         * @version 0.1
+         * @author xjl (xjl20011009@126.com)
+         * @date 2026-03-12
+         * @copyright Copyright (c) 2026
+         *****************************************************************************/
+        double evaluate_heading_consistency(const HypothesisNode &node);
+
     private:
         std::array<std::vector<TrackPoint>, 4> point_batches_;         // 追溯点迹区域，存储四批点迹
         std::array<std::vector<HypothesisNode>, 4> hypothesis_layers_; // 各个假设节点存储区域

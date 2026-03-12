@@ -100,7 +100,52 @@ namespace track_project::trackinit
                     LOG_INFO << "位置 [" << x << "," << y << "] (Bin Index: " << bin_index << ")，节点数量：" << nodes.size();
                     for (const auto *node : nodes)
                     {
-                        LOG_INFO << "    节点详细信息：" << *node;
+                        LOG_INFO << "   航迹索引" << "  depth=" << node->depth << ", confidence=" << node->confidence
+                                 << ", 航向范围=" << " [" << node->heading_start / 3.14159 * 180 << ", " << node->heading_end / 3.14159 * 180
+                                 << "] deg";
+
+                        // 如果有多个节点，打印详细信息
+                        if (nodes.size() == 1)
+                        {
+                            continue; // 只有一个节点，说明关联的不错，就不打印了
+                        }
+                        // 出现了重复航迹，向上追溯所有父节点，打印每个depth关联的点迹
+                        const LogicBasedInitiator::HypothesisNode *current_node = node;
+                        size_t node_depth = current_node->depth;
+                        while (current_node != nullptr)
+                        {
+                            if (current_node->associated_point)
+                            {
+                                // 获取当前节点depth对应的点迹批次
+                                size_t batch_index = node_depth - current_node->depth; // depth 对应点迹批次的索引
+                                if (batch_index < initiator_.point_batches_.size() && !initiator_.point_batches_[batch_index].empty())
+                                {
+                                    const auto *begin = &initiator_.point_batches_[batch_index][0];
+                                    const auto *current_point = current_node->associated_point;
+
+                                    // 使用指针减法计算索引（避免std::distance的类型问题）
+                                    ptrdiff_t point_index = current_point - begin;
+
+                                    LOG_INFO << "   点迹索引:" << point_index
+                                             << ", 经度=" << current_point->longitude
+                                             << ", 纬度=" << current_point->latitude
+                                             << ", x=" << current_point->x
+                                             << ", y=" << current_point->y
+                                             << ", sog=" << current_point->sog
+                                             << ", cog=" << current_point->cog;
+                                }
+                                else
+                                {
+                                    LOG_INFO << "       无效的批次索引，depth=" << current_node->depth;
+                                }
+                            }
+                            else
+                            {
+                                LOG_INFO << "       depth=" << current_node->depth << " 无关联点迹";
+                            }
+
+                            current_node = current_node->parent_node;
+                        }
                     }
                 }
             }
@@ -321,7 +366,7 @@ TEST_CASE("多目标测试", "[FunctionalityCheck][multi_track]")
     unsigned int seed = 42;
 
     // 生成高斯分布的点迹 - 改为每个目标生成足够多的点
-    auto points1 = generate_gaussian_points(2, 0, // 增加到10个点
+    auto points1 = generate_gaussian_points(10, 0, // 增加到10个点
                                             150, 10,
                                             150, 10,
                                             100.0, 50.0,
