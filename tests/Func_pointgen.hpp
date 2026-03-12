@@ -1,3 +1,4 @@
+#pragma once
 #include "../include/defsystem.h"
 #include <vector>
 #include <random>
@@ -49,7 +50,7 @@ void point_update_cv(TrackPoint &p, double time_interval_s)
     {
         double los_x = -p.x / range;
         double los_y = -p.y / range;
-        p.doppler = -p.vx * los_x - p.vy * los_y;
+        p.doppler = p.vx * los_x + p.vy * los_y;
     }
 
     // 更新经纬度

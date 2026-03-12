@@ -22,6 +22,13 @@ namespace track_project::trackinit
     public:
         // 友元测试类
         friend class test_LogicBasedInitiator;
+        using FilterCallback = std::function<bool(const std::array<TrackPoint, 4> &)>;
+
+        // 如果需要修改过滤行为，必须显式调用此方法
+        void set_filter_init_track_func(std::function<bool(const std::array<TrackPoint, 4> &)> func)
+        {
+            filter_init_track_func_ = std::move(func);
+        }
 
         // 假设节点（Hypothesis Node）
         struct HypothesisNode
@@ -70,16 +77,6 @@ namespace track_project::trackinit
     public:
         LogicBasedInitiator();
         virtual ~LogicBasedInitiator() noexcept = default;
-
-        /*****************************************************************************
-         * @brief 设置回调函数，允许引入额外的航迹过滤条件
-         *
-         * @param func 回调函数，输入参数为生成的航迹，输出参数为是否保留该航迹
-         *****************************************************************************/
-        void set_filter_init_track_func(std::function<bool(const std::array<TrackPoint, 4> &)> func)
-        {
-            filter_init_track_func_ = std::move(func);
-        }
 
         /*****************************************************************************
          * @brief 检测直线，在cpp文件中
@@ -212,20 +209,14 @@ namespace track_project::trackinit
         ProcessStatus preprocess_nodes(std::vector<HypothesisNode> &candidate_nodes, std::vector<std::array<TrackPoint, 4>> &new_tracks);
 
         /*****************************************************************************
-         * @brief 扩展假设树，若有点迹未被存放到任何假设树中，就以这些点迹为基础生成新的假设树
+         * @brief 对于所有产生冲突的假设节点，重新处理：
+         * 冲突假设节点是指那些在同一批次中关联了同一观测点迹的假设节点，这些节点之间存在竞争关系，无法同时成立。
+         * 存放于类内变量conflicts_hypothesis_处，故此不用传入参数
          *
-         * @param node 待处理的假设节点
+         * @param new_tracks 输出参数，存储生成的新航迹
          * @return ProcessStatus 错误码，SUCCESS表示成功，其他值表示具体错误
          *****************************************************************************/
-        ProcessStatus extend_hypotheses(const std::vector<HypothesisNode> &node);
-
-        /*****************************************************************************
-         * @brief svd拟合直线，输入4个点迹，输出直线参数a,b,c，满足ax+by+c=0
-         *
-         * @param points 输入点迹，包含4个TrackPoint
-         * @return std::array<double, 3>  对应变量a,b,c
-         *****************************************************************************/
-        std::array<double, 3> fit_line_svd(const std::vector<const TrackPoint *> &points) const;
+        ProcessStatus reprocess_conflict_nodes(std::vector<std::array<TrackPoint, 4>> &new_tracks);
 
     private:
         std::array<std::vector<TrackPoint>, 4> point_batches_;         // 追溯点迹区域，存储四批点迹
@@ -240,10 +231,13 @@ namespace track_project::trackinit
         // 冲突假设列表,依据点迹索引位置存储
         std::array<std::vector<HypothesisNode>, track_project::MAX_INPUT_POINTS> conflicts_hypothesis_;
 
-        // 回调函数，方便DIY，用于指定额外的航迹过滤条件
-        std::function<bool(const std::array<TrackPoint, 4> &)> filter_init_track_func_ =
-            [](const std::array<TrackPoint, 4> &)
-        { return true; }; // 默认不过滤任何航迹
+        // 自定义回调函数，方便针对实际情况进一步过滤，
+        // ⚠️：不允许修改这个默认lambda，如需自定义请使用 set_filter_init_track_func()
+        FilterCallback filter_init_track_func_ = [](const std::array<TrackPoint, 4> &)
+        {
+            static_assert(true, "Default filter: accept all tracks"); // 这只是个标记
+            return true;
+        };
     };
 }
 #endif //_LOGIC_BASED_INITIATOR_HPP_

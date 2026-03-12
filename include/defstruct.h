@@ -126,12 +126,16 @@ namespace track_project
         double vx = 0.0; // 单位m/s
         double vy = 0.0; // 单位m/s
 
+        // 航迹起始
+        double confidence = 0.0; // 置信度，范围[0,1]
+
         // 航迹关联
         bool is_associated = false; // 是否关联
 
         // 时间戳
         Timestamp time;
 
+        // debug
         friend std::ostream &operator<<(std::ostream &os, const TrackPoint &pt)
         {
             os << "TrackPoint(longitude=" << pt.longitude

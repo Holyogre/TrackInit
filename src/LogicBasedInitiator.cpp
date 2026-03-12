@@ -74,6 +74,7 @@ namespace track_project::trackinit
         // 移动所有数据，准备进行下一批次航迹起始
         rotate_to_new_batch(points, new_tracks);
 
+        // 逐个点迹处理假设
         for (const auto &point : point_batches_[0])
         {
             // 查询满足条件的假设节点
@@ -91,6 +92,17 @@ namespace track_project::trackinit
                 return status; // 如果预处理失败，直接返回错误码
             }
         }
+
+        // 统一处理冲突假设
+        auto status = reprocess_conflict_nodes(new_tracks);
+        if (status != ProcessStatus::SUCCESS)
+        {
+            return status; // 如果预处理失败，直接返回错误码
+        }
+
+        // 调用回调函数，输出结果
+        assert(trackCallback_ != nullptr && "HoughSlice类调用的时候没有绑定回调函数");
+        trackCallback_(new_tracks);
 
         return ProcessStatus::SUCCESS;
     }
@@ -168,9 +180,11 @@ namespace track_project::trackinit
         // 依据heading，计算doppler和边界情况
         for (double heading = heading_start; heading <= heading_end + heading_resolution_rad; heading += heading_resolution_rad)
         {
+            double sog = std::fabs(doppler / std::cos(heading - heading_center)); // 反推SOG，单位km/s
+
             // 计算航向对应的速度分量
-            double vx = track_project::VELOCITY_MAX * std::sin(heading); // 北偏东角度，sin对应x分量
-            double vy = track_project::VELOCITY_MAX * std::cos(heading); // 北偏东角度，cos对应y分量
+            double vx = sog * std::sin(heading); // 北偏东角度，sin对应x分量
+            double vy = sog * std::cos(heading); // 北偏东角度，cos对应y分量
 
             // 反推prev点位置
             double prev_x = x - vx * dt / 1000.0; // km
@@ -388,71 +402,143 @@ namespace track_project::trackinit
             return ProcessStatus::SUCCESS;
         }
 
-        // 遍历node列表，往前搜索一个假设，若前置假设来源于同一个点，存放到冲突列表中
+        // ===== 第一步：构建冲突组结构 =====
         struct ConflictGroup
         {
             const TrackPoint *prev_point;
             std::vector<size_t> node_indices;
         };
-        std::vector<ConflictGroup> conflict_groups; // 存储冲突组，每组包含相同前置点迹的假设节点索引
-        conflict_groups.reserve(node_size);
-        for (size_t index = 0; index < node_size; index++)
+        std::vector<ConflictGroup> conflict_groups_depth2; // 存储冲突组，每组包含相同前置点迹的假设节点索引
+        std::vector<ConflictGroup> conflict_groups_depth3; // 存储冲突组，每组包含相同前置点迹的假设节点索引
+        conflict_groups_depth2.reserve(node_size);
+        conflict_groups_depth3.reserve(node_size);
+
+        // ===== 第二步：遍历node列表，往前搜索一个假设，若前置假设来源于同一个点，存放到冲突列表中 =====
+        // 冲突点迹存放逻辑
+        auto addToConflictGroup = [](std::vector<ConflictGroup> &groups, const HypothesisNode &possible_node, size_t index)
+        {
+            const TrackPoint *prev_point = possible_node.parent_node->associated_point;
+            auto it = std::find_if(groups.begin(), groups.end(),
+                                   [prev_point](const ConflictGroup &g)
+                                   { return g.prev_point == prev_point; });
+            if (it != groups.end())
+            {
+                it->node_indices.push_back(index);
+            }
+            else
+            {
+                groups.push_back({prev_point, {index}});
+            }
+        };
+        for (size_t index = 0; index < node_size; ++index)
         {
             const HypothesisNode &possible_node = node[index];
             switch (possible_node.depth)
             {
-            case 0: // 第零层假设必然不冲突，直接放入对应bin就是了
-            case 1: // 第一层假设必然不冲突，因为前置点迹必然不同
-            {
+            case 0:
+            case 1:
                 hypothesis_layers_[0].push_back(possible_node);
-                size_t bin_index = possible_node.bin_index;
-                current_hypothesis_index_[bin_index].push_back(&hypothesis_layers_[0].back()); // 存放索引
+                current_hypothesis_index_[possible_node.bin_index].push_back(&hypothesis_layers_[0].back());
                 break;
-            }
-            case 2: // 二、三层假设可能冲突，放入冲突区域
+            case 2:
+                addToConflictGroup(conflict_groups_depth2, possible_node, index);
+                break;
             case 3:
-            {
-                const TrackPoint *prev_point = possible_node.parent_node->associated_point;
-
-                // 查找是否已有这个前置点迹的组
-                auto it = std::find_if(conflict_groups.begin(), conflict_groups.end(),
-                                       [prev_point](const ConflictGroup &g)
-                                       { return g.prev_point == prev_point; });
-
-                if (it != conflict_groups.end())
-                {
-                    it->node_indices.push_back(index);
-                }
-                else
-                {
-                    conflict_groups.push_back({prev_point, {index}});
-                }
+                addToConflictGroup(conflict_groups_depth3, possible_node, index);
                 break;
-            }
             default:
-            {
                 return ProcessStatus::WRONG_PREV_NODE;
-            }
             }
         }
 
-        // 遍历冲突列表，对于无多个假设项，直接存入，对于多个假设项，存入冲突假设列表
-        for (const auto &group : conflict_groups)
+        // ===== 第三步：遍历冲突列表，对于无唯一假设项，直接存入，对于多个假设项，存入冲突假设列表 =====
+        auto addConflictsToHypothesis = [this](const ConflictGroup &group, const std::vector<HypothesisNode> &node)
         {
-            if (group.node_indices.size() == 1) // 无冲突，直接放入
+            const TrackPoint *prev_point = group.prev_point;
+            size_t prev_point_index = static_cast<size_t>(prev_point - point_batches_[1].data());
+            for (size_t index : group.node_indices)
+            {
+                conflicts_hypothesis_[prev_point_index].push_back(node[index]);
+            }
+        };
+        // 处理depth=2的冲突假设，对符合标准的假设直接存入假设层，对不符合标准的假设存入冲突假设列表
+        for (const auto &group : conflict_groups_depth2)
+        {
+            if (group.node_indices.size() == 1)
             {
                 const HypothesisNode &node_to_add = node[group.node_indices[0]];
                 hypothesis_layers_[0].push_back(node_to_add);
                 size_t bin_index = node_to_add.bin_index;
-                current_hypothesis_index_[bin_index].push_back(&hypothesis_layers_[0].back()); // 存放索引
+                current_hypothesis_index_[bin_index].push_back(&hypothesis_layers_[0].back());
             }
-            else // 不然，依据该假设的前一个假设的点迹在point_batches_[1]中的位置，存放到对应的冲突列表中
+            else
             {
-                const TrackPoint *prev_point = group.prev_point;
-                size_t prev_point_index = static_cast<size_t>(prev_point - point_batches_[1].data()); // 计算前置点迹在上一批次中的索引
-                for (size_t index : group.node_indices)
+                addConflictsToHypothesis(group, node);
+            }
+        }
+
+        // 处理depth=3的冲突假设，对于符合标准的假设直接存入new_track，对不符合标准的假设存入冲突假设列表，后续可以添加depth=3特有的处理逻辑
+        for (const auto &group : conflict_groups_depth3)
+        {
+            if (group.node_indices.size() == 1)
+            {
+                // 前向索引四批次数据，输出为航迹
+                const HypothesisNode &node_to_add = node[group.node_indices[0]];
+                std::array<TrackPoint, 4> new_track;
+                new_track[0] = *(node_to_add.parent_node->parent_node->associated_point); // depth=3的前两个节点关联的点迹
+                new_track[1] = *(node_to_add.parent_node->associated_point);
+                new_track[2] = *(node_to_add.associated_point);
+                new_track[3] = *(node_to_add.associated_point); // depth=3的最后一个节点关联的点迹
+                if (filter_init_track_func_(new_track))
                 {
-                    conflicts_hypothesis_[prev_point_index].push_back(node[index]); // 显式拷贝
+                    new_track[3].confidence = 1.0; // 独占航迹置信度默认为1
+                    new_tracks.push_back(new_track);
+                }
+            }
+            else
+            {
+                addConflictsToHypothesis(group, node);
+            }
+        }
+
+        return ProcessStatus::SUCCESS;
+    }
+
+    ProcessStatus LogicBasedInitiator::reprocess_conflict_nodes(std::vector<std::array<TrackPoint, 4>> &new_tracks)
+    {
+
+        // depth=2的冲突假设存放于此，点迹太少，只有heading_range信息有意义
+
+        // 遍历冲突点迹索引位置
+        for (size_t point_index = 0; point_index < conflicts_hypothesis_.size(); ++point_index)
+        {
+            const auto &conflict_nodes = conflicts_hypothesis_[point_index];
+            if (conflict_nodes.empty())
+            {
+                continue; // 没有冲突假设，跳过
+            }
+
+            // 如果不处理结果长啥样？
+            for (const auto &node : conflict_nodes)
+            {
+                if (node.depth == 2)
+                {
+                    hypothesis_layers_[0].push_back(node);
+                    size_t bin_index = node.bin_index;
+                    current_hypothesis_index_[bin_index].push_back(&hypothesis_layers_[0].back());
+                }
+
+                if (node.depth == 3)
+                {
+                    std::array<TrackPoint, 4> new_track;
+                    new_track[0] = *(node.parent_node->parent_node->associated_point); // depth=3的前两个节点关联的点迹
+                    new_track[1] = *(node.parent_node->associated_point);
+                    new_track[2] = *(node.associated_point);
+                    new_track[3] = *(node.associated_point); // depth=3的最后一个节点关联的点迹
+                    if (filter_init_track_func_(new_track))
+                    {
+                        new_tracks.push_back(new_track);
+                    }
                 }
             }
         }
