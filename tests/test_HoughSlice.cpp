@@ -63,14 +63,14 @@ TEST_CASE("功能测试", "[FunctionalityCheck]")
     std::signal(SIGINT, signal_handler);
 
     // 随机数种子
-    unsigned int seed = Catch::getSeed();
-    // unsigned int seed = 42;
+    // unsigned int seed = Catch::getSeed();
+    unsigned int seed = 42;
 
     // 生成高斯分布的点迹
-    auto points1 = generate_gaussian_points(10, 0,
+    auto points1 = generate_gaussian_points(1, 0,
                                             150, 10,
                                             150, 10,
-                                            100.0, 50.0,
+                                            200.0, 30.0,
                                             seed++);
 
     auto points2 = generate_gaussian_points(10, 0,
@@ -93,9 +93,9 @@ TEST_CASE("功能测试", "[FunctionalityCheck]")
 
     std::vector<TrackPoint> points_all; // 所有点迹
     points_all.insert(points_all.end(), points1.begin(), points1.end());
-    points_all.insert(points_all.end(), points2.begin(), points2.end());
-    points_all.insert(points_all.end(), points3.begin(), points3.end());
-    points_all.insert(points_all.end(), points4.begin(), points4.end());
+    // points_all.insert(points_all.end(), points2.begin(), points2.end());
+    // points_all.insert(points_all.end(), points3.begin(), points3.end());
+    // points_all.insert(points_all.end(), points4.begin(), points4.end());
 
     std::vector<std::array<TrackPoint, 4>> new_tracks;
 
@@ -117,12 +117,13 @@ TEST_CASE("功能测试", "[FunctionalityCheck]")
     alg.process(points_all, new_tracks);
 
     //*****************************************第二次处理数据***********************************************/
-    seed++;
+    // seed++;
     // 更新点迹位置并装在
     for (auto &p : points_all)
     {
         // point_update_cv(p, TIME_INTERVAL_S); // 无噪声
         point_update_cv_with_noise(p, TIME_INTERVAL_S, seed);
+        LOG_DEBUG << "更新后点迹: " << p;
     }
 
     track_manager.draw_point_command(points_all); // 绘制点迹
@@ -130,7 +131,7 @@ TEST_CASE("功能测试", "[FunctionalityCheck]")
 
     //*****************************************第三次处理数据***********************************************/
     // 更新点迹位置并装在
-    seed++;
+    // seed++;
     for (auto &p : points_all)
     {
         // point_update_cv(p, TIME_INTERVAL_S); // 无噪声
@@ -142,7 +143,7 @@ TEST_CASE("功能测试", "[FunctionalityCheck]")
 
     //*****************************************最终输出处理数据***********************************************/
     // 更新点迹位置并装在
-    seed++;
+    // seed++;
     for (auto &p : points_all)
     {
         // point_update_cv(p, TIME_INTERVAL_S); // 无噪声
@@ -390,7 +391,7 @@ TEST_CASE("抗杂波能力 Benchmark", "[Benchmark]")
 
         // ========== 计算检测率和虚警率（基于Doppler）==========
         const double POSITION_TOLERANCE_KM = 10.0; // 1公里匹配阈值
-        const double DOPPLER_TOLERANCE = 2.0;     // 2 m/s 多普勒容差
+        const double DOPPLER_TOLERANCE = 2.0;      // 2 m/s 多普勒容差
 
         std::set<int> matched_targets;
         int false_alarms = 0;

@@ -55,17 +55,17 @@ endfunction()
 #                 test_BitArray.cpp
 #                 ../src/BitArray.hpp
 #                 ${MYUTILS_SOURCES})
-# add_track_test(test_HoughSlice
-#     test_HoughSlice.cpp
-#     ../src/HoughSlice.cpp
-#     ../src/Func_dbscan.cpp
-#     ${MYUTILS_SOURCES}
-#     ${TRACKMANAGER_SOURCES})
-add_track_test(test_LogicBasedInitiator
-    test_LogicBasedInitiator.cpp
-    ../src/LogicBasedInitiator.cpp
+add_track_test(test_HoughSlice
+    test_HoughSlice.cpp
+    ../src/HoughSlice.cpp
+    ../src/Func_dbscan.cpp
     ${MYUTILS_SOURCES}
     ${TRACKMANAGER_SOURCES})
+# add_track_test(test_LogicBasedInitiator
+#     test_LogicBasedInitiator.cpp
+#     ../src/LogicBasedInitiator.cpp
+#     ${MYUTILS_SOURCES}
+#     ${TRACKMANAGER_SOURCES})
 
 
 
@@ -73,6 +73,6 @@ add_track_test(test_LogicBasedInitiator
 # add_test(NAME testObjectPool功能测试 COMMAND testObjectPool "[memory_pool][]")
 # add_test(NAME ClustDBSCAN COMMAND test_ClustDBSCAN "[dbscan][]")
 # add_test(NAME bitARRAY全面测试 COMMAND test_BitArray "[bitarray][]")
-# add_test(NAME HoughSlice功能测试 COMMAND test_HoughSlice "[FunctionalityCheck][]")
-add_test(NAME LogicBasedInitiator功能测试 COMMAND test_LogicBasedInitiator "[FunctionalityCheck][multi_track]")
+add_test(NAME HoughSlice功能测试 COMMAND test_HoughSlice "[FunctionalityCheck]")
+# add_test(NAME LogicBasedInitiator功能测试 COMMAND test_LogicBasedInitiator "[FunctionalityCheck][multi_track]")
 

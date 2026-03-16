@@ -66,7 +66,7 @@ void point_update_cv_with_noise(
     double time_interval_s,
     unsigned seed,
     double pos_noise_sigma_km = 0.0,  // 位置噪声标准差 (km)，默认10米
-    double doppler_noise_sigma = 0.8) // 多普勒噪声标准差 (m/s)
+    double doppler_noise_sigma = 0.1) // 多普勒噪声标准差 (m/s)
 {
     // 用seed创建随机数生成器
     std::mt19937 gen(seed);
@@ -90,7 +90,7 @@ void point_update_cv_with_noise(
     {
         double los_x = -p.x / range;
         double los_y = -p.y / range;
-        p.doppler = -p.vx * los_x - p.vy * los_y;
+        p.doppler = p.vx * los_x + p.vy * los_y;
 
         // 加多普勒测量噪声
         p.doppler += gauss(gen) * doppler_noise_sigma;

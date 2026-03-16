@@ -14,7 +14,7 @@ namespace track_project::trackinit
     constexpr size_t HOUGHSLICE_DOPPLER_BIT_NUM = 64;        // 霍夫变换中多普勒速度位数，必须是32的整数倍
     constexpr size_t HOUGHSLICE_BATCH_NUM = 4;               // 批次数量，必须大于等于4,不然不能回溯四批次数据
     constexpr size_t HOUGHSLICE_THETA_CLUSTER_TOL_DEG = 1.0; // 霍夫空间中检测到的直线参数凝聚时的角度阈值（度），必须可以被角度分辨率整除
-    constexpr double HOUGHSLICE_RHO_CLUSTER_TOL_KM = 0.1;    // 霍夫空间中检测到的直线参数凝聚时的距离阈值（公里），必须可以被距离分辨率整除
+    constexpr double HOUGHSLICE_RHO_CLUSTER_TOL_KM = 0.3;    // 霍夫空间中检测到的直线参数凝聚时的距离阈值（公里），必须可以被距离分辨率整除
 
     // ============ LOGIC BASED 空间参数 ============
     constexpr double LOGIC_BASED_MAX_ABS_X = 400.0; // 最大的X坐标的绝对值上限（KM），以雷达站为原点，正东向右
