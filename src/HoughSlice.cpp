@@ -306,17 +306,12 @@ namespace track_project::trackinit
 
         if (dt > 0)
         {
-            // 计算点迹到雷达的距离（km转m）
-            double distance_m = std::sqrt(point.x * point.x + point.y * point.y) * 1000.0;
-
-            // 计算航迹在 (BATCH_NUM-1) 个时间间隔内可能移动的最大距离
-            double max_displacement = track_project::VELOCITY_MAX * dt * (HOUGHSLICE_BATCH_NUM - 1);
-
-            // 计算视线角变化 α = arctan(max_displacement / distance)
-            double alpha = std::atan2(max_displacement, distance_m);
-
-            // 计算多普勒速度的极限变化量 Δv = max_velocity * (1 - cos(α))
-            double delta_v = track_project::VELOCITY_MAX * (1.0 - std::cos(alpha));
+            // 依据论文，有如下公式成立
+            double R_0 = hypot(point.x, point.y);                                                            // 计算点迹与雷达站的距离R
+            double R_1 = R_0 + point.doppler * dt;                                                           // 计算点迹在dt时间后的位置与雷达站的距离R_1
+            double v_max_square = track_project::VELOCITY_MAX * track_project::VELOCITY_MAX;                 // 最大速度的平方
+            double vec_new_length = sqrt(R_0 * R_0 + 2 * R_1 * point.doppler * dt + v_max_square * dt * dt); // 计算点迹在dt时间内的理论移动距离
+            double delta_v = (point.doppler * R_0 + v_max_square * dt) / vec_new_length;                     //
 
             // 转换为位数：doppler_tolerance_bits = round((Δv / VELOCITY_MAX) * DOPPLER_BIT_NUM) //向上取整
             doppler_tolerance_bits = static_cast<int>(std::round((delta_v / track_project::VELOCITY_MAX) * HOUGHSLICE_DOPPLER_BIT_NUM));
@@ -357,50 +352,50 @@ namespace track_project::trackinit
         double heading1 = base_dir_rad - angle_rad;
         double heading2 = base_dir_rad + angle_rad;
 
-        vote_in_hough_space(0, M_PI, point.doppler, rel_x, rel_y, batch, doppler_tolerance_bits, it_clust.vote_area); // debug
-        // //  所有heading区间归一化为0-pi的连续区间，;heading1和heading2的绝对值差不可能超过180度，射线方向性由DOPPLER保证
-        // if (heading1 <= 0) // 仅有可能heading1小于0，此时heading2必然小于pi
-        // {
-        //     double heading3 = 0.0, heading4 = M_PI;
-        //     heading3 = heading1 + M_PI;
-        //     heading4 = M_PI;
-        //     heading1 = 0.0;
-        //     heading2 = heading2;
-        //     vote_in_hough_space(heading1, heading2, point.doppler, rel_x, rel_y, batch, doppler_tolerance_bits, it_clust.vote_area);
-        //     vote_in_hough_space(heading3, heading4, point.doppler, rel_x, rel_y, batch, doppler_tolerance_bits, it_clust.vote_area);
-        // }
-        // else if (heading2 >= 2 * M_PI) // 仅有可能heading2大于2π,此时heading1必然大于π
-        // {
-        //     double heading3 = 0.0, heading4 = M_PI;
-        //     // 射线方向性可以由doppler确定，由angle_rad保证heading3必然位于(π,2π)，故区间为(0,heading2-2π)∪(heading1-π,π)
-        //     heading3 = heading1 - M_PI;
-        //     heading4 = M_PI;
-        //     heading1 = 0.0;
-        //     heading2 = heading2 - 2 * M_PI;
-        //     vote_in_hough_space(heading1, heading2, point.doppler, rel_x, rel_y, batch, doppler_tolerance_bits, it_clust.vote_area);
-        //     vote_in_hough_space(heading3, heading4, point.doppler, rel_x, rel_y, batch, doppler_tolerance_bits, it_clust.vote_area);
-        // }
-        // else if (heading1 <= M_PI && heading2 <= M_PI) // 正常情况，区间为(heading1,heading2)
-        // {
-        //     vote_in_hough_space(heading1, heading2, point.doppler, rel_x, rel_y, batch, doppler_tolerance_bits, it_clust.vote_area);
-        // }
-        // else if (heading1 <= M_PI && heading2 > M_PI) // 可能存在heading1<π<heading2的情况，此时区间为(0,heading2-π)∪(heading1+π,2π)
-        // {
-        //     double heading3 = heading1;
-        //     double heading4 = M_PI;
-        //     heading1 = 0.0;
-        //     heading2 = heading2 - M_PI;
-        //     vote_in_hough_space(heading1, heading2, point.doppler, rel_x, rel_y, batch, doppler_tolerance_bits, it_clust.vote_area);
-        //     vote_in_hough_space(heading3, heading4, point.doppler, rel_x, rel_y, batch, doppler_tolerance_bits, it_clust.vote_area);
-        // }
-        // else if (heading1 > M_PI && heading2 < 2 * M_PI) // 可能存在heading1>heading2>pi的情况，此时区间为(heading1-π,heading2-π)
-        // {
-        //     vote_in_hough_space(heading1 - M_PI, heading2 - M_PI, point.doppler, rel_x, rel_y, batch, doppler_tolerance_bits, it_clust.vote_area);
-        // }
-        // else
-        // {
-        //     assert(0); // 不可能存在其他情况了，除非出BUG了（经参数扫描测试和边界测试确认不存在额外情况）
-        // }
+        // vote_in_hough_space(0, M_PI, point.doppler, rel_x, rel_y, batch, doppler_tolerance_bits, it_clust.vote_area); // debug
+        //  所有heading区间归一化为0-pi的连续区间，;heading1和heading2的绝对值差不可能超过180度，射线方向性由DOPPLER保证
+        if (heading1 <= 0) // 仅有可能heading1小于0，此时heading2必然小于pi
+        {
+            double heading3 = 0.0, heading4 = M_PI;
+            heading3 = heading1 + M_PI;
+            heading4 = M_PI;
+            heading1 = 0.0;
+            heading2 = heading2;
+            vote_in_hough_space(heading1, heading2, point.doppler, rel_x, rel_y, batch, doppler_tolerance_bits, it_clust.vote_area);
+            vote_in_hough_space(heading3, heading4, point.doppler, rel_x, rel_y, batch, doppler_tolerance_bits, it_clust.vote_area);
+        }
+        else if (heading2 >= 2 * M_PI) // 仅有可能heading2大于2π,此时heading1必然大于π
+        {
+            double heading3 = 0.0, heading4 = M_PI;
+            // 射线方向性可以由doppler确定，由angle_rad保证heading3必然位于(π,2π)，故区间为(0,heading2-2π)∪(heading1-π,π)
+            heading3 = heading1 - M_PI;
+            heading4 = M_PI;
+            heading1 = 0.0;
+            heading2 = heading2 - 2 * M_PI;
+            vote_in_hough_space(heading1, heading2, point.doppler, rel_x, rel_y, batch, doppler_tolerance_bits, it_clust.vote_area);
+            vote_in_hough_space(heading3, heading4, point.doppler, rel_x, rel_y, batch, doppler_tolerance_bits, it_clust.vote_area);
+        }
+        else if (heading1 <= M_PI && heading2 <= M_PI) // 正常情况，区间为(heading1,heading2)
+        {
+            vote_in_hough_space(heading1, heading2, point.doppler, rel_x, rel_y, batch, doppler_tolerance_bits, it_clust.vote_area);
+        }
+        else if (heading1 <= M_PI && heading2 > M_PI) // 可能存在heading1<π<heading2的情况，此时区间为(0,heading2-π)∪(heading1+π,2π)
+        {
+            double heading3 = heading1;
+            double heading4 = M_PI;
+            heading1 = 0.0;
+            heading2 = heading2 - M_PI;
+            vote_in_hough_space(heading1, heading2, point.doppler, rel_x, rel_y, batch, doppler_tolerance_bits, it_clust.vote_area);
+            vote_in_hough_space(heading3, heading4, point.doppler, rel_x, rel_y, batch, doppler_tolerance_bits, it_clust.vote_area);
+        }
+        else if (heading1 > M_PI && heading2 < 2 * M_PI) // 可能存在heading1>heading2>pi的情况，此时区间为(heading1-π,heading2-π)
+        {
+            vote_in_hough_space(heading1 - M_PI, heading2 - M_PI, point.doppler, rel_x, rel_y, batch, doppler_tolerance_bits, it_clust.vote_area);
+        }
+        else
+        {
+            assert(0); // 不可能存在其他情况了，除非出BUG了（经参数扫描测试和边界测试确认不存在额外情况）
+        }
     }
 
     // 对于霍夫变换空间中的指定区间进行特殊投票
@@ -457,9 +452,20 @@ namespace track_project::trackinit
             center_bit_pos = HOUGHSLICE_DOPPLER_BIT_NUM / 2 + (LEVELS_PER_SIDE - 1 - level);
         }
 
+        // bit_mask计算
+        int bit_start = 0;
+        int bit_end = 0;
         // 设置中心位及其相邻的 ±doppler_tolerance_bits 范围内的位
-        int bit_start = std::max(0, center_bit_pos - doppler_tolerance_bits);
-        int bit_end = std::min(static_cast<int>(HOUGHSLICE_DOPPLER_BIT_NUM) - 1, center_bit_pos + doppler_tolerance_bits);
+        if (doppler > 0) // 朝向雷达站引动时候，最大速度为当前速度，最小速度为doppler-tolerance对应的速度
+        {
+            bit_start = std::max(0, center_bit_pos);
+            bit_end = std::min(static_cast<int>(HOUGHSLICE_DOPPLER_BIT_NUM) - 1, center_bit_pos + doppler_tolerance_bits);
+        }
+        else
+        {
+            bit_start = std::max(0, center_bit_pos - doppler_tolerance_bits);
+            bit_end = std::min(static_cast<int>(HOUGHSLICE_DOPPLER_BIT_NUM) - 1, center_bit_pos);
+        }
 
         for (int bit_pos = bit_start; bit_pos <= bit_end; ++bit_pos)
         {
@@ -689,7 +695,7 @@ namespace track_project::trackinit
     {
         const double CENTER_X = cluster.center_x;
         const double CENTER_Y = cluster.center_y;
-        const double DOPPLER_TOL = 2 * track_project::VELOCITY_MAX / HOUGHSLICE_DOPPLER_BIT_NUM; 
+        const double DOPPLER_TOL = 2 * track_project::VELOCITY_MAX / HOUGHSLICE_DOPPLER_BIT_NUM;
 
         // 点迹要增加避免重复的逻辑，不能总是靠边界来分辨，设定每个点迹最多允许使用HOUGHSLICE_POINT_REUSE_LIMIT次
 
