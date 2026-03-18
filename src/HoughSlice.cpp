@@ -300,22 +300,23 @@ namespace track_project::trackinit
         // ==================== 计算 doppler_tolerance_bits ====================
         // 计算时间间隔 dt（秒）：使用 point_list 的第一个和最后一个批次的时间戳
         int doppler_tolerance_bits = 0;
-        int64_t t_start = time_buffer[batch].milliseconds;                                      // 当前时刻的时间
-        int64_t t_end = time_buffer[HOUGHSLICE_BATCH_NUM - 1].milliseconds;                     // 最终时间
-        double dt = static_cast<double>(t_end - t_start) / 1000.0 / (HOUGHSLICE_BATCH_NUM - 1); // 转换为秒
+        int64_t t_start = time_buffer[batch].milliseconds;                  // 当前时刻的时间
+        int64_t t_end = time_buffer[HOUGHSLICE_BATCH_NUM - 1].milliseconds; // 最终时间
+        double dt = static_cast<double>(t_end - t_start) / 1000.0;          // 转换为秒
 
         if (dt > 0)
         {
             // 依据论文，有如下公式成立
-            double R_0 = hypot(point.x, point.y);                                                            // 计算点迹与雷达站的距离R
-            double R_1 = R_0 + point.doppler * dt;                                                           // 计算点迹在dt时间后的位置与雷达站的距离R_1
+            double R_0 = hypot(point.x, point.y) * 1000.0;                                                   // 计算点迹与雷达站的距离R
+            double R_1 = R_0 + point.doppler * dt ;                                                  // 计算点迹在dt时间后的位置与雷达站的距离R_1
             double v_max_square = track_project::VELOCITY_MAX * track_project::VELOCITY_MAX;                 // 最大速度的平方
             double vec_new_length = sqrt(R_0 * R_0 + 2 * R_1 * point.doppler * dt + v_max_square * dt * dt); // 计算点迹在dt时间内的理论移动距离
-            double delta_v = (point.doppler * R_0 + v_max_square * dt) / vec_new_length;                     //
+            double delta_v = fabs(point.doppler * R_0 + v_max_square * dt) / vec_new_length;                     //
 
             // 转换为位数：doppler_tolerance_bits = round((Δv / VELOCITY_MAX) * DOPPLER_BIT_NUM) //向上取整
             doppler_tolerance_bits = static_cast<int>(std::round((delta_v / track_project::VELOCITY_MAX) * HOUGHSLICE_DOPPLER_BIT_NUM));
             doppler_tolerance_bits = std::clamp(doppler_tolerance_bits + 2, 1, static_cast<int>(HOUGHSLICE_DOPPLER_BIT_NUM) - 1);
+            LOG_INFO << "点迹(" << point.x << "," << point.y << "): dt=" << dt << "s, R_0=" << R_0 << "m, R_1=" << R_1 << "m, Δv=" << delta_v << "m/s, doppler_tolerance_bits=" << doppler_tolerance_bits;
         }
 
         // 依据doppler和VELOCITY_MAX计算所有可能的航向角度序列
@@ -695,7 +696,7 @@ namespace track_project::trackinit
     {
         const double CENTER_X = cluster.center_x;
         const double CENTER_Y = cluster.center_y;
-        const double DOPPLER_TOL = 2 * track_project::VELOCITY_MAX / HOUGHSLICE_DOPPLER_BIT_NUM;
+        const double DOPPLER_TOL = 5 * track_project::VELOCITY_MAX / HOUGHSLICE_DOPPLER_BIT_NUM; // 需要增大对应值，因为回溯的时候参数值也会变化
 
         // 点迹要增加避免重复的逻辑，不能总是靠边界来分辨，设定每个点迹最多允许使用HOUGHSLICE_POINT_REUSE_LIMIT次
 

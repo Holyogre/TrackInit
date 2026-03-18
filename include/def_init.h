@@ -14,7 +14,7 @@ namespace track_project::trackinit
     constexpr size_t HOUGHSLICE_DOPPLER_BIT_NUM = 64;        // 霍夫变换中多普勒速度位数，必须是32的整数倍
     constexpr size_t HOUGHSLICE_BATCH_NUM = 4;               // 批次数量，必须大于等于4,不然不能回溯四批次数据
     constexpr size_t HOUGHSLICE_THETA_CLUSTER_TOL_DEG = 1.0; // 霍夫空间中检测到的直线参数凝聚时的角度阈值（度），必须可以被角度分辨率整除
-    constexpr double HOUGHSLICE_RHO_CLUSTER_TOL_KM = 0.3;    // 霍夫空间中检测到的直线参数凝聚时的距离阈值（公里），必须可以被距离分辨率整除
+    constexpr double HOUGHSLICE_RHO_CLUSTER_TOL_KM = 0.5;    // 霍夫空间中检测到的直线参数凝聚时的距离阈值（公里），必须可以被距离分辨率整除
 
     // ============ LOGIC BASED 空间参数 ============
     constexpr double LOGIC_BASED_MAX_ABS_X = 400.0; // 最大的X坐标的绝对值上限（KM），以雷达站为原点，正东向右
@@ -27,8 +27,8 @@ namespace track_project::trackinit
     constexpr double LOGIC_BASED_PROTECTIVE_RADIUS_KM = 0.1;   // 保护半径（KM），误差分布函数不一定准确，以防万一设置的扩张值，谨慎修改，非DEBUG最好是0
     constexpr double LOGIC_BASED_PROTECTIVE_DOPPLER_M_S = 0.01; // doppler保护半径,这个保护半径用于抑制波动值，可以适当给大点
     // ============ LOGIC BASED 减枝参数 ============
-    constexpr double LOGIC_BASED_CONFLICT_THETA_RANGE = 5;   // 冲突假设航向范围，务必远大于雷达站角度分辨率，不然无减枝作用
-    constexpr double LOGIC_BASED_CONFLICT_RHO_RANGE = 5;     // 冲突假设角度范围，务必远大于雷达站距离分辨率，不然无减枝作用
+    constexpr double LOGIC_BASED_DISTANCE_CONFIDENCE_WEIGHT = 0.5;  // 距离置信度权重
+    constexpr double LOGIC_BASED_HEADING_CONFIDENCE_WEIGHT = 0.5;   // 航向置信度权重
 
     /*****************************************************************************
      * @brief 状态码

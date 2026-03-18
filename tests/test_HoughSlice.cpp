@@ -70,7 +70,7 @@ TEST_CASE("功能测试", "[FunctionalityCheck]")
     auto points1 = generate_gaussian_points(2, 0,
                                             150, 10,
                                             150, 10,
-                                            100.0, 30.0,
+                                            200.0, 30.0,
                                             seed++);
 
     auto points2 = generate_gaussian_points(10, 0,
@@ -136,6 +136,7 @@ TEST_CASE("功能测试", "[FunctionalityCheck]")
     {
         // point_update_cv(p, TIME_INTERVAL_S); // 无噪声
         point_update_cv_with_noise(p, TIME_INTERVAL_S, seed);
+        LOG_DEBUG << "更新后点迹: " << p;
     }
 
     track_manager.draw_point_command(points_all); // 绘制点迹
@@ -148,6 +149,7 @@ TEST_CASE("功能测试", "[FunctionalityCheck]")
     {
         // point_update_cv(p, TIME_INTERVAL_S); // 无噪声
         point_update_cv_with_noise(p, TIME_INTERVAL_S, seed);
+        LOG_DEBUG << "更新后点迹: " << p;
     }
 
     track_manager.draw_point_command(points_all); // 绘制点迹
