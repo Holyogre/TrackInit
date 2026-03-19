@@ -202,9 +202,9 @@ namespace track_project::trackinit
 
             bool found_any = false;
 
-            for (int x = x_start; x <= x_end; ++x)
+            for (size_t x = x_start; x <= x_end; ++x)
             {
-                for (int y = y_start; y <= y_end; ++y)
+                for (size_t y = y_start; y <= y_end; ++y)
                 {
                     size_t bin_index = x * LOGIC_BASED_NUM_Y_BINS + y;
                     const auto &nodes = index[bin_index];
@@ -405,23 +405,25 @@ TEST_CASE("多目标测试", "[FunctionalityCheck][multi_track]")
     // 绑定回调函数，显示航迹
     initiator.set_track_callback([&track_manager](const std::vector<std::array<TrackPoint, 4>> &tracks)
                                  {
-        LOG_INFO << "生成航迹数量: " << tracks.size();
+        LOG_INFO << "回调函数被调用，生成了 " << tracks.size() << " 条航迹";
         track_manager.create_track_command(const_cast<std::vector<std::array<TrackPoint, 4>> &>(tracks)); });
 
     // 首次处理点迹
     track_manager.clear_all_command();
 
+    sleep(10); // 等待1秒，确保窗口已经打开
+
     std::vector<std::array<TrackPoint, 4>> new_tracks;
 
     //*****************************************第一次处理数据***********************************************/
     LOG_INFO << "第一批次处理 - 时间片 0";
-    track_manager.draw_point_command(points_all); // 绘制初始点迹
+    // track_manager.draw_point_command(points_all); // 绘制初始点迹
 
     ProcessStatus status = initiator.process(points_all, new_tracks);
     REQUIRE(status == ProcessStatus::SUCCESS);
 
     tester.printHypothesisDistribution();
-    tester.saveHypothesisDistributionToDat("../hypothesis_distribution_1.dat");
+    // tester.saveHypothesisDistributionToDat("../hypothesis_distribution_1.dat");
 
     //*****************************************第二次处理数据***********************************************/
     // 更新点迹位置（带噪声）
@@ -431,13 +433,13 @@ TEST_CASE("多目标测试", "[FunctionalityCheck][multi_track]")
     }
 
     LOG_INFO << "第二批次处理 - 时间片 1";
-    track_manager.draw_point_command(points_all);
+    // track_manager.draw_point_command(points_all);
 
     status = initiator.process(points_all, new_tracks);
     REQUIRE(status == ProcessStatus::SUCCESS);
 
     tester.printHypothesisDistribution();
-    tester.saveHypothesisDistributionToDat("../hypothesis_distribution_2.dat");
+    // tester.saveHypothesisDistributionToDat("../hypothesis_distribution_2.dat");
 
     //*****************************************第三次处理数据***********************************************/
     for (auto &point : points_all)
@@ -446,13 +448,13 @@ TEST_CASE("多目标测试", "[FunctionalityCheck][multi_track]")
     }
 
     LOG_INFO << "第三批次处理 - 时间片 2";
-    track_manager.draw_point_command(points_all);
+    // track_manager.draw_point_command(points_all);
 
     status = initiator.process(points_all, new_tracks);
     REQUIRE(status == ProcessStatus::SUCCESS);
 
     tester.printHypothesisDistribution();
-    tester.saveHypothesisDistributionToDat("../hypothesis_distribution_3.dat");
+    // tester.saveHypothesisDistributionToDat("../hypothesis_distribution_3.dat");
 
     //*****************************************第四次处理数据***********************************************/
     for (auto &point : points_all)

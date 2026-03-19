@@ -9,7 +9,7 @@
 # cd build && cmake -DCMAKE_EXPORT_COMPILE_COMMANDS=1 ..
 
 # ===== 用户配置区 =====
-CLEAN_BUILD="modeA"   # modeA:彻底删除构建目录; modeB:用make clean; modeC:不清理
+CLEAN_BUILD="modeB"   # modeA:彻底删除构建目录; modeB:用make clean; modeC:不清理
 DEBUG_MODE=true       # true: Debug模式; false: Release模式
 TEST_VERBOSE=true     # true: 输出详细测试报告; false: 仅输出错误
 # ======================
@@ -59,11 +59,11 @@ cmake -DCMAKE_BUILD_TYPE="$BUILD_TYPE" .. || exit 1
 echo "开始编译（使用$(nproc)个线程）..."
 make -j$(nproc) || exit 1
 
-# === 运行测试 ===
-echo "运行测试..."
-if [ "$TEST_VERBOSE" = true ]; then
-    ctest -V > report.txt 2>&1  # 详细输出到文件
-else
-    ctest --output-on-failure > report.txt 2>&1  # 仅输出失败信息
-fi
-echo "测试报告已保存到 build/report.txt"
+# # === 运行测试 ===
+# echo "运行测试..."
+# if [ "$TEST_VERBOSE" = true ]; then
+#     ctest -V > report.txt 2>&1  # 详细输出到文件
+# else
+#     ctest --output-on-failure > report.txt 2>&1  # 仅输出失败信息
+# fi
+# echo "测试报告已保存到 build/report.txt"

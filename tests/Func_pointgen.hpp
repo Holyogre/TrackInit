@@ -137,8 +137,6 @@ std::vector<TrackPoint> generate_target_points_xyv(int64_t time, const std::vect
             p.cog += 360.0;
 
         // 多普勒速度 (假设雷达在原点)
-        double point_angle = std::atan2(p.y, p.x);
-        double cog_rad = p.cog * M_PI / 180.0;
         p.doppler = -(p.vx * p.x + p.vy * p.y) / hypot(p.x, p.y); // 投影到航向上
 
         // 时间戳
@@ -186,7 +184,6 @@ std::vector<TrackPoint> generate_target_points_polar(int64_t time,
         p.vy = p.sog * std::cos(cog_rad); // vy = sog * cos(cog)
 
         // 多普勒速度 (假设雷达在原点)
-        double point_angle = std::atan2(p.y, p.x);
         p.doppler = -(p.vx * p.x + p.vy * p.y) / hypot(p.x, p.y); // 投影到航向上
 
         // 时间戳

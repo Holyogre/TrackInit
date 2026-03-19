@@ -42,7 +42,7 @@ namespace track_project::trackinit
             double heading_start; // 该假设节点对应的航向范围的起始值，单位弧度
             double heading_end;   // 该假设节点对应的航向范围的结束值，单位弧度
 
-            double confidence = 1.0; // 置信度，计算方式我还没想好todo
+            double confidence = 1.0; // 置信度
 
             HypothesisNode(size_t d, size_t b, const TrackPoint *pt, HypothesisNode *parent, double h_start, double h_end)
                 : depth(d), bin_index(b), associated_point(pt), parent_node(parent), heading_start(h_start), heading_end(h_end) {}
@@ -206,40 +206,35 @@ namespace track_project::trackinit
          * @param new_tracks 输出参数，存储生成的新航迹
          * @return ProcessStatus 错误码，SUCCESS表示成功，TOO_MANY_HYPOTHSIS表示假设空间不足
          *****************************************************************************/
-        ProcessStatus preprocess_nodes(std::vector<HypothesisNode> &candidate_nodes, std::vector<std::array<TrackPoint, 4>> &new_tracks);
+        ProcessStatus process_nodes(std::vector<HypothesisNode> &candidate_nodes, std::vector<std::array<TrackPoint, 4>> &new_tracks);
 
         /*****************************************************************************
-         * @brief 对于所有产生冲突的假设节点，重新处理：
-         * 冲突假设节点是指那些在同一批次中关联了同一观测点迹的假设节点，这些节点之间存在竞争关系，无法同时成立。
-         * 存放于类内变量conflicts_hypothesis_处，故此不用传入参数
-         *
-         * @param new_tracks 输出参数，存储生成的新航迹
-         * @return ProcessStatus 错误码，SUCCESS表示成功，其他值表示具体错误
-         *****************************************************************************/
-        ProcessStatus reprocess_conflict_nodes(std::vector<std::array<TrackPoint, 4>> &new_tracks);
-
-        /*****************************************************************************
-         * @brief 用于评估运动一致性，依据dx,dy的变化方差，计算一个得分，得分越高说明运动一致性越好
-         *
-         * @param node 输入假设节点，要求depth至少为2，且每个节点都必须关联一个观测点迹
-         * @return double MSE分数，用于反应运动一致性
-         *****************************************************************************/
-        double evaluate_motion_consistency(const HypothesisNode &node);
-
-        /*****************************************************************************
-         * @brief 评估航向一致性，依据当前的heading缩小的情况和之前的heading进行比较
-         * 越小说明heading信息熵在减小，可能性在缩小，越不推荐
-         * 但是这种索引方法对于doppler小的点迹非常不友好，因为doppler小的点迹对应的heading范围非常大
-         * 这个信息熵是用于滤除错误点迹的最后手段，滥用可能导致正确航迹被剔除
+         * @brief 评估距离偏离参考值
          *
          * @param node 输入假设节点
-         * @return double 航向范围得分
-         * @version 0.1
-         * @author xjl (xjl20011009@126.com)
-         * @date 2026-03-12
-         * @copyright Copyright (c) 2026
+         * @param dt 时间间隔，单位秒
+         * @return double 距离差值，单位千米
          *****************************************************************************/
-        double evaluate_heading_consistency(const HypothesisNode &node);
+        double evaluate_distance(const HypothesisNode &node, double dt) const;
+
+        /*****************************************************************************
+         * @brief 评估角度偏离参考值
+         *
+         * @param node 输入假设节点
+         * @return double 角度差值，单位弧度
+         *****************************************************************************/
+        double evaluate_heading(const HypothesisNode &node) const;
+
+        /*****************************************************************************
+         * @brief K-Best选择算法，从候选节点中选择得分最高的K个节点，K的值由LOGIC_BASED_K_BEST宏定义
+         *
+         * @param confidence 候选节点的得分
+         * @param best_indices 输出参数，存储得分最高的K个节点的索引
+         * @return size_t 实际选择的节点数量，可能小于K
+         *****************************************************************************/
+        size_t k_best_selection(const std::vector<double> &confidence, std::array<size_t, LOGIC_BASED_K_BEST> &best_indices) const;
+
+
 
     private:
         std::array<std::vector<TrackPoint>, 4> point_batches_;         // 追溯点迹区域，存储四批点迹
@@ -250,9 +245,6 @@ namespace track_project::trackinit
         std::vector<std::vector<HypothesisNode *>> current_hypothesis_index_; // 当前假设索引表
         std::vector<std::vector<HypothesisNode *>> history_hypothesis_index_; // 历史假设索引表
         std::vector<std::pair<double, double>> error_distribution_table_;     // bin的误差分布数据(sigma_x,sigma_y)
-
-        // 冲突假设列表,依据点迹索引位置存储
-        std::array<std::vector<HypothesisNode>, track_project::MAX_INPUT_POINTS> conflicts_hypothesis_;
 
         // 自定义回调函数，方便针对实际情况进一步过滤，
         // ⚠️：不允许修改这个默认lambda，如需自定义请使用 set_filter_init_track_func()

@@ -1,7 +1,12 @@
 #include "Func_dbscan.hpp"
 
 #include <cstddef>
+//傻逼代码报错多
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wsign-conversion"
+#pragma GCC diagnostic ignored "-Wconversion"
 #include "../utils/nanoflann.hpp"
+#pragma GCC diagnostic pop
 #include "../utils/Logger.hpp"
 
 #include <type_traits>

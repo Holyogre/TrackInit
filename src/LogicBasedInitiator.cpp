@@ -26,11 +26,6 @@ namespace track_project::trackinit
             history_hypothesis_index_[i].reserve(LOGIC_BASED_MAX_NODE_PER_BINS);
         }
 
-        // 初始化冲突假设列表
-        for (size_t i = 0; i < MAX_INPUT_POINTS; ++i)
-        {
-            conflicts_hypothesis_[i].reserve(LOGIC_BASED_MAX_NODE_PER_BINS * 10); // 预留假设空间
-        }
 
         clear_all(); // 初始化数据结构，清空所有数据
 
@@ -40,8 +35,10 @@ namespace track_project::trackinit
         {
             // 计算BINS对应的x,y坐标
             auto [x_index, y_index] = bin_index_to_xy_index(i);
-            double x = (x_index + 0.5) * static_cast<double>(2 * LOGIC_BASED_MAX_ABS_X / LOGIC_BASED_NUM_X_BINS) - LOGIC_BASED_MAX_ABS_X;
-            double y = (y_index + 0.5) * static_cast<double>(2 * LOGIC_BASED_MAX_ABS_Y / LOGIC_BASED_NUM_Y_BINS) - LOGIC_BASED_MAX_ABS_Y;
+            double sbcpp_x = static_cast<double>(x_index);
+            double sbcpp_y = static_cast<double>(y_index);
+            double x = (sbcpp_x + 0.5) * static_cast<double>(2 * LOGIC_BASED_MAX_ABS_X / LOGIC_BASED_NUM_X_BINS) - LOGIC_BASED_MAX_ABS_X;
+            double y = (sbcpp_y + 0.5) * static_cast<double>(2 * LOGIC_BASED_MAX_ABS_Y / LOGIC_BASED_NUM_Y_BINS) - LOGIC_BASED_MAX_ABS_Y;
 
             // 转换为极坐标
             double rho = std::sqrt(x * x + y * y);
@@ -86,7 +83,7 @@ namespace track_project::trackinit
             }
 
             // 预处理假设节点，对于无可置疑的假设节点直接拓展假设，或直接输出为航迹
-            ProcessStatus status = preprocess_nodes(candidate_nodes_, new_tracks);
+            ProcessStatus status = process_nodes(candidate_nodes_, new_tracks);
             if (status != ProcessStatus::SUCCESS)
             {
                 return status; // 如果预处理失败，直接返回错误码
@@ -94,11 +91,11 @@ namespace track_project::trackinit
         }
 
         // 统一处理冲突假设
-        auto status = reprocess_conflict_nodes(new_tracks);
-        if (status != ProcessStatus::SUCCESS)
-        {
-            return status; // 如果预处理失败，直接返回错误码
-        }
+        // auto status = reprocess_conflict_nodes(new_tracks);
+        // if (status != ProcessStatus::SUCCESS)
+        // {
+        //     return status; // 如果预处理失败，直接返回错误码
+        // }
 
         // 调用回调函数，输出结果
         assert(trackCallback_ != nullptr && "HoughSlice类调用的时候没有绑定回调函数");
@@ -111,7 +108,7 @@ namespace track_project::trackinit
     void LogicBasedInitiator::rotate_to_new_batch(const std::vector<TrackPoint> &new_points, std::vector<std::array<TrackPoint, 4>> &new_tracks)
     {
         // 1. 所有数据后移动，最后一批数据放到最前面来
-        for (int i = 3; i > 0; --i)
+        for (size_t i = 3; i > 0; --i)
         {
             std::swap(point_batches_[i], point_batches_[i - 1]);
             std::swap(hypothesis_layers_[i], hypothesis_layers_[i - 1]);
@@ -127,13 +124,7 @@ namespace track_project::trackinit
             bin.clear();
         }
 
-        // 3. 清空冲突假设列表
-        for (auto &conflict_ : conflicts_hypothesis_)
-        {
-            conflict_.clear();
-        }
-
-        // 4.清空输出航迹
+        // 3.清空输出航迹
         new_tracks.clear();
 
         // 4. 放置数据
@@ -272,8 +263,8 @@ namespace track_project::trackinit
                     }
 
                     // 和历史假设取并集
-                    hypothesis_heading_start = std::min(temp_heading_range.first, hypothesis_heading_start);
-                    hypothesis_heading_end = std::max(temp_heading_range.second, hypothesis_heading_end);
+                    hypothesis_heading_start = std::max(temp_heading_range.first, hypothesis_heading_start);
+                    hypothesis_heading_end = std::min(temp_heading_range.second, hypothesis_heading_end);
 
                     if (hypothesis_heading_end < hypothesis_heading_start) // 不存在重合航向，舍去该点
                     {
@@ -387,7 +378,7 @@ namespace track_project::trackinit
         return {x_min_index, x_max_index, y_min_index, y_max_index};
     }
 
-    ProcessStatus LogicBasedInitiator::preprocess_nodes(std::vector<HypothesisNode> &node, std::vector<std::array<TrackPoint, 4>> &new_tracks)
+    ProcessStatus LogicBasedInitiator::process_nodes(std::vector<HypothesisNode> &node, std::vector<std::array<TrackPoint, 4>> &new_tracks)
     {
         if (hypothesis_layers_[0].size() + node.size() >= MAX_BINS * LOGIC_BASED_NUM_Y_BINS * LOGIC_BASED_MAX_NODE_PER_BINS ||
             node.size() >= LOGIC_BASED_MAX_NODE_PER_BINS)
@@ -396,324 +387,250 @@ namespace track_project::trackinit
             return ProcessStatus::TOO_MANY_HYPOTHSIS;
         }
 
-        size_t node_size = node.size();
-        if (node_size == 0)
+        const size_t node_size = node.size();
+        assert(node_size > 0 && "process_nodes函数输入的假设节点列表不能为空");
+        if (node[0].depth == 0) // depth=0必然只有一个假设，且不需要进行距离和航向一致性评估，直接加入即可
         {
+            // 新假设直接加入，不需要处理
+            for (size_t index = 0; index < node_size; ++index)
+            {
+                hypothesis_layers_[0].push_back(node[index]);
+                current_hypothesis_index_[node[index].bin_index].push_back(&hypothesis_layers_[0].back()); // 存放下索引
+            }
             return ProcessStatus::SUCCESS;
         }
 
-        // ===== 第一步：构建冲突组结构 =====
-        struct ConflictGroup
-        {
-            const TrackPoint *prev_point;
-            std::vector<size_t> node_indices;
-        };
-        std::vector<ConflictGroup> conflict_groups_depth2; // 存储冲突组，每组包含相同前置点迹的假设节点索引
-        std::vector<ConflictGroup> conflict_groups_depth3; // 存储冲突组，每组包含相同前置点迹的假设节点索引
-        conflict_groups_depth2.reserve(node_size);
-        conflict_groups_depth3.reserve(node_size);
+        // 获取时间差
+        double dt = static_cast<double>(timestamp_batches_[0].milliseconds - timestamp_batches_[1].milliseconds) / 1000.0; // s
 
-        // ===== 第二步：遍历node列表，往前搜索一个假设，若前置假设来源于同一个点，存放到冲突列表中 =====
-        // 冲突点迹存放逻辑
-        auto addToConflictGroup = [](std::vector<ConflictGroup> &groups, const HypothesisNode &possible_node, size_t index)
-        {
-            const TrackPoint *prev_point = possible_node.parent_node->associated_point;
-            auto it = std::find_if(groups.begin(), groups.end(),
-                                   [prev_point](const ConflictGroup &g)
-                                   { return g.prev_point == prev_point; });
-            if (it != groups.end())
-            {
-                it->node_indices.push_back(index);
-            }
-            else
-            {
-                groups.push_back({prev_point, {index}});
-            }
-        };
+        // ===== 第一步：计算参考值、统计信息 =====
+        std::vector<double> distance_ref_values(node_size); // 距离参考值数组
+        std::vector<double> angle_ref_values(node_size);    // 角度参考值数组
+        size_t depth_max = 0;                               // 提取最大深度
+        double softmax_angle_sum = 0.0;                     // 两个参数softmax的分母，和一个参数的softmax分子
+        double softmax_distance_sum = 0.0;                  // 两个参数softmax的分母，和一个参数的softmax分子
         for (size_t index = 0; index < node_size; ++index)
         {
-            const HypothesisNode &possible_node = node[index];
-            switch (possible_node.depth)
-            {
-            case 0:
-            case 1:
-                hypothesis_layers_[0].push_back(possible_node);
-                current_hypothesis_index_[possible_node.bin_index].push_back(&hypothesis_layers_[0].back());
-                break;
-            case 2:
-                addToConflictGroup(conflict_groups_depth2, possible_node, index);
-                break;
-            case 3:
-                addToConflictGroup(conflict_groups_depth3, possible_node, index);
-                break;
-            default:
-                return ProcessStatus::WRONG_PREV_NODE;
-            }
+            // 计算偏移量
+            double angle_ref = evaluate_heading(node[index]);
+            double distance_ref = evaluate_distance(node[index], dt);
+
+            // 计算参考值
+            angle_ref_values[index] = std::exp(-angle_ref);
+            distance_ref_values[index] = std::exp(-distance_ref);
+            softmax_angle_sum += angle_ref_values[index]; // 计算分母
+            softmax_distance_sum += distance_ref_values[index];
+
+            depth_max = std::max(depth_max, node[index].depth);
         }
 
-        // ===== 第三步：遍历冲突列表，对于无唯一假设项，直接存入，对于多个假设项，存入冲突假设列表 =====
-        auto addConflictsToHypothesis = [this](const ConflictGroup &group, const std::vector<HypothesisNode> &node)
+        // ===== 第二步：计算置信度 =====
+        std::vector<double> confidence_values(node_size);
+        for (size_t index = 0; index < node_size; ++index)
         {
-            const TrackPoint *prev_point = group.prev_point;
-            size_t prev_point_index = static_cast<size_t>(prev_point - point_batches_[1].data());
-            for (size_t index : group.node_indices)
+            // 计算原始匹配质量（距离+角度）
+            double raw_match = LOGIC_BASED_HEADING_CONFIDENCE_WEIGHT * (angle_ref_values[index] / softmax_angle_sum) +
+                               LOGIC_BASED_DISTANCE_CONFIDENCE_WEIGHT * (distance_ref_values[index] / softmax_distance_sum);
+
+            double parent_conf = node[index].parent_node->confidence; // 父假设置信度
+
+            // 按深度衰减（重复乘以原始匹配质量）
+            double decayed_match = raw_match;
+            for (size_t d = 0; d < (depth_max - node[index].depth); ++d)
             {
-                conflicts_hypothesis_[prev_point_index].push_back(node[index]);
+                decayed_match *= raw_match; // 每层衰减一次
             }
-        };
-        // 处理depth=2的冲突假设，对符合标准的假设直接存入假设层，对不符合标准的假设存入冲突假设列表
-        for (const auto &group : conflict_groups_depth2)
-        {
-            if (group.node_indices.size() == 1)
-            {
-                const HypothesisNode &node_to_add = node[group.node_indices[0]];
-                hypothesis_layers_[0].push_back(node_to_add);
-                size_t bin_index = node_to_add.bin_index;
-                current_hypothesis_index_[bin_index].push_back(&hypothesis_layers_[0].back());
-            }
-            else
-            {
-                addConflictsToHypothesis(group, node);
-            }
+
+            // 最终置信度 = 衰减后的匹配质量 × 父置信度
+            confidence_values[index] = decayed_match * parent_conf;
         }
 
-        // 处理depth=3的冲突假设，对于符合标准的假设直接存入new_track，对不符合标准的假设存入冲突假设列表，后续可以添加depth=3特有的处理逻辑
-        for (const auto &group : conflict_groups_depth3)
+        // ===== 第三步：K-BEST剪枝 =====
+        std::array<size_t, LOGIC_BASED_K_BEST> best_indices;
+        size_t k_num = k_best_selection(confidence_values, best_indices);
+
+        // ===== 第四步：重新分配权重，分配假设节点归属 =====
+        double confidence_sum = 0.0;
+        for (size_t i = 0; i < k_num; ++i)
         {
-            if (group.node_indices.size() == 1)
+            confidence_sum += confidence_values[best_indices[i]];
+        }
+        // 防止除零（若总和为0，则均匀分配）
+        if (confidence_sum < 1e-12)
+            confidence_sum = 1.0;
+        size_t wait_to_track_index = SIZE_MAX;
+        double hypothesis_to_track_best_confidence = 0.0;
+        for (size_t i = 0; i < k_num; ++i)
+        {
+            size_t best_index = best_indices[i];
+            node[best_index].confidence = confidence_values[best_index] / confidence_sum; // 归一化
+
+            if (node[best_index].depth == 3)
             {
-                // 前向索引四批次数据，输出为航迹
-                const HypothesisNode &node_to_add = node[group.node_indices[0]];
-                std::array<TrackPoint, 4> new_track;
-                new_track[0] = *(node_to_add.parent_node->parent_node->associated_point); // depth=3的前两个节点关联的点迹
-                new_track[1] = *(node_to_add.parent_node->associated_point);
-                new_track[2] = *(node_to_add.associated_point);
-                new_track[3] = *(node_to_add.associated_point); // depth=3的最后一个节点关联的点迹
-                if (filter_init_track_func_(new_track))
+                if (node[best_index].confidence > hypothesis_to_track_best_confidence)
                 {
-                    new_track[3].confidence = 1.0; // 独占航迹置信度默认为1
-                    new_tracks.push_back(new_track);
+                    hypothesis_to_track_best_confidence = node[best_index].confidence;
+                    wait_to_track_index = best_index;
                 }
+                continue; // depth=3 节点不加入假设层
             }
-            else
-            {
-                addConflictsToHypothesis(group, node);
-            }
+
+            // 加入对应深度的假设层（注意：原代码用 hypothesis_layers_[0]，应改为 node[best_index].depth）
+            hypothesis_layers_[node[best_index].depth].push_back(node[best_index]);
+            current_hypothesis_index_[node[best_index].bin_index].push_back(
+                &hypothesis_layers_[node[best_index].depth].back());
+        }
+
+        // 第五步：处理depth=3的节点，直接输出//TODO理论上应该置信度不够的时候再等一批，但是框架不允许了，面向论文CODE，暂时不动了
+        if (wait_to_track_index != SIZE_MAX)
+        {
+            const auto &best_node = node[wait_to_track_index];
+
+            // debug
+            assert(best_node.associated_point != nullptr && best_node.parent_node != nullptr &&
+                   best_node.parent_node->associated_point != nullptr && best_node.parent_node->parent_node != nullptr &&
+                   best_node.parent_node->parent_node->associated_point != nullptr && best_node.parent_node->parent_node->parent_node != nullptr &&
+                   best_node.parent_node->parent_node->parent_node->associated_point != nullptr &&
+                   "depth=3的假设节点及其父节点必须都关联有效点迹");
+
+            new_tracks.push_back({
+                *(best_node.parent_node->parent_node->parent_node->associated_point),
+                *(best_node.parent_node->parent_node->associated_point),
+                *(best_node.associated_point),
+                *(best_node.parent_node->associated_point),
+            });
         }
 
         return ProcessStatus::SUCCESS;
     }
 
-    // 若有多个假设，满足1、当前假设关联点迹相同；2、此前假设关联点迹相同；则只准留下一个假设
-    // 若有多个假设，满足1、当前假设关联点迹不同；2、此前假设关联点迹相同；则计算一个置信度，分配前一个点迹的所有权
-    ProcessStatus LogicBasedInitiator::reprocess_conflict_nodes(std::vector<std::array<TrackPoint, 4>> &new_tracks)
+    // 计算与父节点外推点迹最小距离误差
+    double LogicBasedInitiator::evaluate_distance(const HypothesisNode &node, double dt) const
     {
-        struct Conflict_track
+        // 获取当前节点的观测点迹，必须存在
+        const TrackPoint *current_point = node.associated_point;
+        if (!current_point)
         {
-            size_t prev_point_index; // 冲突点迹索引
-            std::vector<TrackPoint *> current_point_index;
-            std::vector<double> score1; // 最重要的评分
-            std::vector<double> score2; // 当最重要的评分近似的时候，选用此评分作为依据
+            // 如果点迹为空，返回一个极大值表示距离不一致
+            return std::numeric_limits<double>::max();
+        }
 
-            // 同步存放参数的函数，保证每个点迹对应的评分是一一对应的
-            void add_candidate(TrackPoint *point, double s1, double s2)
+        // 获取父节点及其点迹（depth>0时保证存在）
+        const HypothesisNode *parent = node.parent_node;
+        if (!parent || !parent->associated_point)
+        {
+            return std::numeric_limits<double>::max();
+        }
+        const TrackPoint *parent_point = parent->associated_point;
+
+        // 提取坐标（单位：km）
+        double xn = current_point->x;
+        double yn = current_point->y;
+        double xf = parent_point->x;
+        double yf = parent_point->y;
+
+        // 径向速度转换：从 m/s 转换为 km/s
+        double v_r_km_per_s = current_point->doppler / 1000.0;
+
+        // 计算当前点距离原点的距离 sqrt(xn^2 + yn^2)
+        double rn = std::sqrt(xn * xn + yn * yn);
+        if (rn < 1e-9)
+        {
+            // 如果当前点在原点附近，无法计算有效距离，返回极大值
+            return std::numeric_limits<double>::max();
+        }
+
+        // 计算 C 值（所有量统一为 km 和 km/s）
+        double C = -v_r_km_per_s * dt * rn + (xn * xn + yn * yn);
+
+        // 计算分子绝对值
+        double numerator = std::fabs(xn * xf + yn * yf + C);
+
+        // 最终距离误差 d_i
+        double d_i = numerator / rn;
+
+        return d_i;
+    }
+
+    // 计算与父节点外推点迹航向一致性，输入当前节点和时间差，获取当前节点和父节点的航向范围，计算当前节点航向中心与父节点航向范围的关系，变化量越小越好
+    double LogicBasedInitiator::evaluate_heading(const HypothesisNode &node) const
+    {
+        // 获取当前节点的航向范围
+        double h_ns = node.heading_start;
+        double h_ne = node.heading_end;
+
+        // 获取父节点（必须存在）
+        const HypothesisNode *parent = node.parent_node;
+        if (!parent)
+        {
+            // 若无父节点，返回一个极大值表示航向不一致
+            return std::numeric_limits<double>::max();
+        }
+        double h_fs = parent->heading_start;
+        double h_fe = parent->heading_end;
+
+        // 计算当前节点航向中心 h_nc
+        double h_nc = (h_ns + h_ne) / 2.0;
+
+        // 定义角度差规范化函数：返回 [0, π] 内的最小弧度差
+        auto angle_diff = [](double a, double b) -> double
+        {
+            double diff = std::fabs(a - b);
+            // 处理角度周期性（假设输入在 [0, 2π)）
+            diff = std::fmod(diff, 2.0 * M_PI);
+            if (diff > M_PI)
             {
-                current_point_index.push_back(point);
-                score1.push_back(s1);
-                score2.push_back(s2);
+                diff = 2.0 * M_PI - diff;
             }
+            return diff;
         };
 
-        std::vector<Conflict_track> conflict_tracks; // 存储冲突组合，记录分数
-        conflict_tracks.reserve(100);                // 最大1000条航迹，存储100条必然够了
+        // 计算三项
+        double term1 = angle_diff(h_nc, h_fs);
+        double term2 = angle_diff(h_nc, h_fe);
+        double term3 = angle_diff(h_fs, h_fe); // 父节点范围宽度
 
-        // 冲突列表和点迹列表的索引是一一对应的，故能如此做
-        for (size_t point_index = 0; point_index < conflicts_hypothesis_.size(); ++point_index)
-        {
-            auto &conflict_nodes = conflicts_hypothesis_[point_index];
-            if (conflict_nodes.size() <= 1)
-            {
-                continue;
-            }
+        // 最终 h_out
+        double h_out = term1 + term2 - term3;
 
-            // 从前置航迹索引中，存入一个冲突航迹
-            Conflict_track temp_conflict_track{
-                point_index,
-                std::vector<TrackPoint *>(),
-                std::vector<double>(),
-                std::vector<double>()};
-            conflict_tracks.push_back(std::move(temp_conflict_track));
-            auto &current_conflict = conflict_tracks.back();
-
-            // 利用associated_point连续的特性进行分组处理
-            const TrackPoint *current_point = nullptr;
-            double best_score1 = 1e10;
-            double best_score2 = 1e10;
-            TrackPoint *best_point = nullptr;
-            int group_count = 0;
-            bool has_processed_group = false; // 标记是否处理过任何组
-
-            // 遍历所有冲突节点
-            for (size_t i = 0; i < conflict_nodes.size(); ++i)
-            {
-                const auto &node = conflict_nodes[i];
-                const TrackPoint *node_point = node.associated_point;
-
-                // 计算当前节点的评分
-                double score1 = evaluate_motion_consistency(node);
-                double score2 = evaluate_heading_consistency(node);
-
-                // 利用数据特性！ associated_point相同的节点一定是连续存储的，且已经按照associated_point排序好了
-                if (node_point != current_point)
-                {
-                    // 处理上一组的结果
-                    if (current_point != nullptr)
-                    {
-                        has_processed_group = true;
-                        // 无论组内有多少节点，都把该组对应的最优节点加入
-                        current_conflict.add_candidate(best_point, best_score1, best_score2);
-                    }
-
-                    // 重置为新的一组
-                    current_point = node_point;
-                    best_point = const_cast<TrackPoint *>(node_point);
-                    best_score1 = score1;
-                    best_score2 = score2;
-                    group_count = 1;
-                }
-                else // 如果是重复的点迹，只保留最好的结果
-                {
-                    group_count++;
-
-                    // 评分规则：先比score1，如果近似再比score2
-                    const double EPSILON = 0.1; // 如果距离小于一个检测范围的话，就只保留一次最好的结果
-                    if (score1 < best_score1 - EPSILON)
-                    {
-                        best_score1 = score1;
-                        best_score2 = score2;
-                        best_point = const_cast<TrackPoint *>(node_point);
-                    }
-                    else if (std::abs(score1 - best_score1) < EPSILON && score2 < best_score2)
-                    {
-                        best_score2 = score2;
-                        best_point = const_cast<TrackPoint *>(node_point);
-                    }
-                }
-            }
-
-            // 处理最后一组
-            if (current_point != nullptr)
-            {
-                current_conflict.add_candidate(best_point, best_score1, best_score2);
-            }
-
-            // 验证：确保有候选点被添加
-            assert(!current_conflict.current_point_index.empty() && "冲突点迹没有生成任何候选点");
-        }
-
-        // 依据score1和score2计算depth=2时候的置信度，
-        // 依据score1和score2和depth=2时候的置信度计算depth=3的时候的置信度，
-        for (auto &conflict : conflict_tracks)
-        {
-            // TODO: 在这里实现置信度计算和筛选逻辑
-            // 可以用 conflict.score1, conflict.score2 和 new_tracks 中的信息
-        }
-
-        return ProcessStatus::SUCCESS;
+        return h_out;
     }
 
-    // 评估航向一致性，输入一个假设节点，回溯获取该节点和父节点的航向中心，计算航向变化量，变化量越小越好
-    double LogicBasedInitiator::evaluate_heading_consistency(const HypothesisNode &node)
+    size_t LogicBasedInitiator::k_best_selection(const std::vector<double> &confidence, std::array<size_t, LOGIC_BASED_K_BEST> &best_indices) const
     {
-        if (node.depth < 1)
-            return 0.0; // 至少需要前一时刻的航向
+        const size_t N = confidence.size();
+        const size_t K = LOGIC_BASED_K_BEST;
+        const size_t selected = std::min(N, K); // 实际选中的数量
 
-        // 回溯获取航向序列
-        std::vector<double> heading_centers;
-        const HypothesisNode *current = &node;
-        while (current != nullptr && heading_centers.size() <= node.depth)
+        // 创建索引数组 [0, 1, ..., N-1]
+        std::vector<size_t> idx(N);
+        for (size_t i = 0; i < N; ++i)
         {
-            double heading_center = (current->heading_start + current->heading_end) / 2;
-            heading_centers.push_back(heading_center);
-            current = current->parent_node;
+            idx[i] = i;
         }
 
-        if (heading_centers.size() < 2)
-            return 0.0;
+        // 部分排序：只排序前 selected 个最大的元素（降序）
+        std::partial_sort(idx.begin(), idx.begin() + (long int)selected, idx.end(),
+                          [&confidence](size_t a, size_t b)
+                          {
+                              return confidence[a] > confidence[b]; // 按置信度从大到小
+                          });
 
-        // 计算航向变化：最新航向 / 旧航向（考虑角度周期性）
-        double latest_heading = heading_centers[0];   // 当前节点
-        double previous_heading = heading_centers[1]; // 父节点
+        // 将前 selected 个索引复制到输出数组
+        for (size_t i = 0; i < selected; ++i)
+        {
+            best_indices[i] = idx[i];
+        }
 
-        // 处理角度周期性（例如从355度变到5度，实际变化只有10度）
-        double heading_diff = std::abs(latest_heading - previous_heading);
-        heading_diff = std::min(heading_diff, 2 * M_PI - heading_diff);
+        // 将剩余位置标记为无效（可选，便于调试）
+        for (size_t i = selected; i < K; ++i)
+        {
+            best_indices[i] = SIZE_MAX;
+        }
 
-        // 航向变化越小越好
-        return heading_diff;
+        return selected;
     }
 
-    // 评估运动一致性
-    double LogicBasedInitiator::evaluate_motion_consistency(const HypothesisNode &node)
-    {
-        if (node.depth < 2)
-            return 0.0;
-
-        // 回溯获取点迹序列
-        std::vector<const TrackPoint *> point_chain;
-        const HypothesisNode *current = &node;
-        while (current != nullptr && point_chain.size() <= node.depth)
-        {
-            if (current->associated_point != nullptr)
-            {
-                point_chain.push_back(current->associated_point);
-            }
-            current = current->parent_node;
-        }
-
-        if (point_chain.size() < 2)
-            return 0.0;
-
-        if (node.depth == 2 && point_chain.size() >= 3)
-        {
-            double dx1 = point_chain[1]->x - point_chain[0]->x;
-            double dy1 = point_chain[1]->y - point_chain[0]->y;
-            double dx2 = point_chain[2]->x - point_chain[1]->x;
-            double dy2 = point_chain[2]->y - point_chain[1]->y;
-            return (dx1 - dx2) * (dx1 - dx2) + (dy1 - dy2) * (dy1 - dy2);
-        }
-        else if (node.depth >= 3 && point_chain.size() >= 4)
-        {
-            std::vector<double> dx, dy;
-            for (size_t i = 0; i < point_chain.size() - 1; i++)
-            {
-                dx.push_back(point_chain[i + 1]->x - point_chain[i]->x);
-                dy.push_back(point_chain[i + 1]->y - point_chain[i]->y);
-            }
-
-            double mean_dx = 0.0, mean_dy = 0.0;
-            for (size_t i = 0; i < dx.size(); i++)
-            {
-                mean_dx += dx[i];
-                mean_dy += dy[i];
-            }
-            mean_dx /= dx.size();
-            mean_dy /= dy.size();
-
-            double var_dx = 0.0, var_dy = 0.0;
-            for (size_t i = 0; i < dx.size(); i++)
-            {
-                var_dx += (dx[i] - mean_dx) * (dx[i] - mean_dx);
-                var_dy += (dy[i] - mean_dy) * (dy[i] - mean_dy);
-            }
-            var_dx /= dx.size();
-            var_dy /= dy.size();
-
-            return var_dx + var_dy;
-        }
-
-        return 0.0;
-    }
 
     void LogicBasedInitiator::clear_all()
     {
@@ -732,11 +649,6 @@ namespace track_project::trackinit
             history_hypothesis_index_[i].clear();
         }
 
-        // 清空冲突列表
-        for (auto &conflict_ : conflicts_hypothesis_)
-        {
-            conflict_.clear();
-        }
 
         // 误差分布表格不清空，因为这个不随数据到来二变化，只收到build_error_distribution_table的调用才会更新
     }

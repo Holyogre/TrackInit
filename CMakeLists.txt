@@ -60,10 +60,10 @@ target_link_libraries(main PUBLIC
 )
 
 # ==================== 添加编译警告选项 ====================
-# if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
-#     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall -Wextra -Wpedantic -Wconversion -Wsign-conversion")
-#     message(STATUS "启用基础警告: -Wall -Wextra -Wpedantic -Wconversion -Wsign-conversion")
-# endif()
+if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall -Wextra -Wpedantic -Wconversion -Wsign-conversion")
+    message(STATUS "启用基础警告: -Wall -Wextra -Wpedantic -Wconversion -Wsign-conversion")
+endif()
 # # ==================== 等级1：更严格警告 ====================
 # if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
 #     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wshadow -Wunused -Wnull-dereference")
