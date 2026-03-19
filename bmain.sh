@@ -59,11 +59,11 @@ cmake -DCMAKE_BUILD_TYPE="$BUILD_TYPE" .. || exit 1
 echo "开始编译（使用$(nproc)个线程）..."
 make -j$(nproc) || exit 1
 
-# # === 运行测试 ===
-# echo "运行测试..."
-# if [ "$TEST_VERBOSE" = true ]; then
-#     ctest -V > report.txt 2>&1  # 详细输出到文件
-# else
-#     ctest --output-on-failure > report.txt 2>&1  # 仅输出失败信息
-# fi
-# echo "测试报告已保存到 build/report.txt"
+# === 运行测试 ===
+echo "运行测试..."
+if [ "$TEST_VERBOSE" = true ]; then
+    ctest -V > report.txt 2>&1  # 详细输出到文件
+else
+    ctest --output-on-failure > report.txt 2>&1  # 仅输出失败信息
+fi
+echo "测试报告已保存到 build/report.txt"

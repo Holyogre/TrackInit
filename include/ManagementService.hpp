@@ -106,6 +106,12 @@ namespace track_project
          *****************************************************************************/
         const trackmanager::TrackerManager &get_tracker_manager() const { return tracker_manager_; }
 
+        // debug强制调用visualizer的打印函数，查看当前航迹分布
+        void print_tracker_manager()
+        {
+            track_visualizer_.print_full_state(tracker_manager_);
+        }
+
     private:
         // 指令类型枚举
         enum class CommandType

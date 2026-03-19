@@ -26,7 +26,6 @@ namespace track_project::trackinit
             history_hypothesis_index_[i].reserve(LOGIC_BASED_MAX_NODE_PER_BINS);
         }
 
-
         clear_all(); // 初始化数据结构，清空所有数据
 
         // 误差分布表格，依据先验THETA和RHO的SIGMA计算获得
@@ -493,12 +492,13 @@ namespace track_project::trackinit
                    best_node.parent_node->parent_node->parent_node->associated_point != nullptr &&
                    "depth=3的假设节点及其父节点必须都关联有效点迹");
 
-            new_tracks.push_back({
-                *(best_node.parent_node->parent_node->parent_node->associated_point),
-                *(best_node.parent_node->parent_node->associated_point),
-                *(best_node.associated_point),
-                *(best_node.parent_node->associated_point),
-            });
+            // debug
+            LOG_INFO << "heading范围: [" << best_node.heading_start << ", " << best_node.heading_end << "], confidence: " << best_node.confidence;
+
+            new_tracks.push_back({*(best_node.parent_node->parent_node->parent_node->associated_point),
+                                  *(best_node.parent_node->parent_node->associated_point),
+                                  *(best_node.parent_node->associated_point),
+                                  *(best_node.associated_point)});
         }
 
         return ProcessStatus::SUCCESS;
@@ -631,7 +631,6 @@ namespace track_project::trackinit
         return selected;
     }
 
-
     void LogicBasedInitiator::clear_all()
     {
         // 清空存储信息
@@ -648,7 +647,6 @@ namespace track_project::trackinit
             current_hypothesis_index_[i].clear();
             history_hypothesis_index_[i].clear();
         }
-
 
         // 误差分布表格不清空，因为这个不随数据到来二变化，只收到build_error_distribution_table的调用才会更新
     }

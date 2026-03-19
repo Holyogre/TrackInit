@@ -276,7 +276,15 @@ TEST_CASE("单目标测试", "[FunctionalityCheck][single_track]")
 {
     std::signal(SIGINT, signal_handler);
 
-    std::vector<std::array<double, 4>> params = {{70.0, 70.0, 100.0, 100.0}}; // 初始化
+    double pos_noise_sigma_km = 2.0;  // 位置噪声标准差10米（0.01km）
+    double doppler_noise_sigma = 0.5; // 多普勒噪声标准差0.1m/s
+
+    unsigned int seed[3] = {4, 232, 3424}; // 三个随机数种子
+    seed[0] = rand() % 10000;
+    seed[1] = rand() % 10000;
+    seed[2] = rand() % 10000;
+
+    std::vector<std::array<double, 4>> params = {{70.0, 70.0, 1.0, 1.0}}; // 初始化
     std::vector<TrackPoint> track_points = generate_target_points_xyv(0, params);
 
     std::vector<TrackPoint> points_all = track_points; // 所有点迹
@@ -310,7 +318,7 @@ TEST_CASE("单目标测试", "[FunctionalityCheck][single_track]")
     // 更新点迹位置并装载（带噪声）
     for (auto &p : points_all)
     {
-        point_update_cv(p, TIME_INTERVAL_S);
+        point_update_cv_with_noise(p, TIME_INTERVAL_S, seed[0], pos_noise_sigma_km, doppler_noise_sigma); // 使用带噪声的更新，位置噪声标准差10米（0.01km），多普勒噪声标准差0.1m/s
     }
 
     LOG_INFO << "第二批次结果";
@@ -325,7 +333,7 @@ TEST_CASE("单目标测试", "[FunctionalityCheck][single_track]")
     // 更新点迹位置并装载（带噪声）
     for (auto &p : points_all)
     {
-        point_update_cv(p, TIME_INTERVAL_S);
+        point_update_cv_with_noise(p, TIME_INTERVAL_S, seed[1], pos_noise_sigma_km, doppler_noise_sigma); // 使用带噪声的更新，位置噪声标准差10米（0.01km），多普勒噪声标准差0.1m/s
     }
 
     LOG_INFO << "第三批次结果";
@@ -340,11 +348,12 @@ TEST_CASE("单目标测试", "[FunctionalityCheck][single_track]")
     // 更新点迹位置并装载（带噪声）
     for (auto &p : points_all)
     {
-        point_update_cv(p, TIME_INTERVAL_S);
+        point_update_cv_with_noise(p, TIME_INTERVAL_S, seed[2], pos_noise_sigma_km, doppler_noise_sigma);
     }
 
     LOG_INFO << "第四批次结果";
     track_manager.draw_point_command(points_all); // 绘制点迹
+    sleep(1);
     status = initiator.process(points_all, new_tracks);
     REQUIRE(status == ProcessStatus::SUCCESS);
 
@@ -354,6 +363,173 @@ TEST_CASE("单目标测试", "[FunctionalityCheck][single_track]")
     while (g_running)
     {
         wait_seconds(5); // 可被 CTRL+C 中断的等待
+    }
+}
+
+// 性能测试，单目标抗误差能力
+TEST_CASE("单目标统计测试", "[Performance][single_track]")
+{
+    std::signal(SIGINT, signal_handler);
+
+    // 统计变量
+    const int TOTAL_RUNS = 100;
+    int success_count = 0;
+    int failure_count = 0;
+    std::vector<int> failed_runs; // 记录失败的运行次数
+
+    // 参数设置
+    double pos_noise_sigma_km = 2.0;                                      // 位置噪声标准差
+    double doppler_noise_sigma = 0.5;                                     // 多普勒噪声标准差
+    std::vector<std::array<double, 4>> params = {{70.0, 70.0, 1.0, 1.0}}; // 目标参数
+
+    LOG_INFO << "开始单目标统计测试，将运行 " << TOTAL_RUNS << " 次...";
+    // 创建算法实例（每次运行重新创建，确保状态独立）
+    LogicBasedInitiator initiator;
+    test_LogicBasedInitiator tester(initiator);
+    
+    for (int run = 0; run < TOTAL_RUNS; run++)
+    {
+        // 为每次运行生成不同的随机种子
+        unsigned int seed[3];
+        seed[0] = rand() % 10000 + run * 3;
+        seed[1] = rand() % 10000 + run * 3 + 1;
+        seed[2] = rand() % 10000 + run * 3 + 2;
+
+        // 生成目标点迹
+        std::vector<TrackPoint> track_points = generate_target_points_xyv(0, params);
+        std::vector<TrackPoint> points_all = track_points;
+
+        // 只在最后一次运行时创建可视化
+        track_project::ManagementService *track_manager_ptr = nullptr;
+        if (run == TOTAL_RUNS - 1)
+        {
+            track_manager_ptr = new track_project::ManagementService(0.45, 0.75, 0.45, 0.75);
+
+            // 绑定回调函数
+            initiator.set_track_callback([track_manager_ptr](const std::vector<std::array<TrackPoint, 4>> &tracks)
+                                         { track_manager_ptr->create_track_command(
+                                               const_cast<std::vector<std::array<TrackPoint, 4>> &>(tracks)); });
+
+            track_manager_ptr->clear_all_command();
+            track_manager_ptr->draw_point_command(points_all);
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        }
+
+        // 用于存储每次处理的结果
+        std::vector<std::array<TrackPoint, 4>> new_tracks;
+        bool run_success = true;
+
+        // *****************************************四次处理循环***********************************************/
+        for (int batch = 0; batch < 4; batch++)
+        {
+            // 除了第一批次，其他批次都需要更新点迹（带噪声）
+            if (batch > 0)
+            {
+                for (auto &p : points_all)
+                {
+                    point_update_cv_with_noise(p, TIME_INTERVAL_S,
+                                               seed[batch - 1],
+                                               pos_noise_sigma_km,
+                                               doppler_noise_sigma);
+                }
+            }
+
+            // 只在最后一次运行时绘制点迹
+            if (track_manager_ptr && batch == 3) // 最后一次运行的第四批次绘制
+            {
+                track_manager_ptr->draw_point_command(points_all);
+                std::this_thread::sleep_for(std::chrono::milliseconds(100));
+            }
+
+            // 处理点迹
+            ProcessStatus status = initiator.process(points_all, new_tracks);
+
+            if (status != ProcessStatus::SUCCESS)
+            {
+                run_success = false;
+                LOG_DEBUG << "运行 #" << run << " 批次 " << batch << " 失败";
+                break;
+            }
+        }
+
+        // 判断本次运行是否成功（可以根据你的标准来判断）
+        // 这里假设成功标准是：四次处理都成功，并且最终有航迹生成
+        bool has_tracks = false;
+
+        // 临时判断逻辑：如果四次处理都成功，算成功
+        if (run_success)
+        {
+            success_count++;
+        }
+        else
+        {
+            failure_count++;
+            failed_runs.push_back(run);
+        }
+
+        // 打印进度
+        if ((run + 1) % 10 == 0)
+        {
+            LOG_INFO << "已完成 " << (run + 1) << "/" << TOTAL_RUNS
+                     << " 次运行，当前成功: " << success_count
+                     << ", 失败: " << failure_count;
+        }
+
+        // 最后一次运行，打印假设分布
+        if (run == TOTAL_RUNS - 1)
+        {
+            LOG_INFO << "最后一次运行结果:";
+            tester.printHypothesisDistribution();
+
+            // 保存假设分布
+            tester.saveHypothesisDistributionToDat("../statistics_hypothesis_distribution.dat");
+
+            // 打印航迹管理器状态
+            if (track_manager_ptr)
+            {
+                track_manager_ptr->print_tracker_manager();
+            }
+        }
+
+        // 清理最后一次运行的可视化资源
+        if (track_manager_ptr)
+        {
+            delete track_manager_ptr;
+            track_manager_ptr = nullptr;
+        }
+    }
+
+    // 输出统计结果
+    LOG_INFO << "========================================";
+    LOG_INFO << "统计测试完成！";
+    LOG_INFO << "总运行次数: " << TOTAL_RUNS;
+    LOG_INFO << "成功次数: " << success_count;
+    LOG_INFO << "失败次数: " << failure_count;
+    LOG_INFO << "成功率: " << (success_count * 100.0 / TOTAL_RUNS) << "%";
+
+    if (!failed_runs.empty())
+    {
+        std::stringstream ss;
+        ss << "失败的运行次数: ";
+        for (size_t i = 0; i < failed_runs.size() && i < 10; i++)
+        {
+            ss << failed_runs[i] << " ";
+        }
+        if (failed_runs.size() > 10)
+        {
+            ss << "... 共 " << failed_runs.size() << " 次失败";
+        }
+        LOG_INFO << ss.str();
+    }
+
+    // 保持窗口显示（如果有可视化的话）
+    if (g_running)
+    {
+        LOG_INFO << "按CTRL+C退出...";
+        while (g_running)
+        {
+            wait_seconds(5);
+        }
     }
 }
 
@@ -411,9 +587,9 @@ TEST_CASE("多目标测试", "[FunctionalityCheck][multi_track]")
     // 首次处理点迹
     track_manager.clear_all_command();
 
-    sleep(10); // 等待1秒，确保窗口已经打开
+    // sleep(1); // 等待1秒，确保窗口已经打开
 
-    std::vector<std::array<TrackPoint, 4>> new_tracks;
+    std::vector<std::array<TrackPoint, 4>> new_tracks(100);
 
     //*****************************************第一次处理数据***********************************************/
     LOG_INFO << "第一批次处理 - 时间片 0";
@@ -422,7 +598,7 @@ TEST_CASE("多目标测试", "[FunctionalityCheck][multi_track]")
     ProcessStatus status = initiator.process(points_all, new_tracks);
     REQUIRE(status == ProcessStatus::SUCCESS);
 
-    tester.printHypothesisDistribution();
+    // tester.printHypothesisDistribution();
     // tester.saveHypothesisDistributionToDat("../hypothesis_distribution_1.dat");
 
     //*****************************************第二次处理数据***********************************************/
@@ -438,7 +614,7 @@ TEST_CASE("多目标测试", "[FunctionalityCheck][multi_track]")
     status = initiator.process(points_all, new_tracks);
     REQUIRE(status == ProcessStatus::SUCCESS);
 
-    tester.printHypothesisDistribution();
+    // tester.printHypothesisDistribution();
     // tester.saveHypothesisDistributionToDat("../hypothesis_distribution_2.dat");
 
     //*****************************************第三次处理数据***********************************************/
@@ -453,7 +629,7 @@ TEST_CASE("多目标测试", "[FunctionalityCheck][multi_track]")
     status = initiator.process(points_all, new_tracks);
     REQUIRE(status == ProcessStatus::SUCCESS);
 
-    tester.printHypothesisDistribution();
+    // tester.printHypothesisDistribution();
     // tester.saveHypothesisDistributionToDat("../hypothesis_distribution_3.dat");
 
     //*****************************************第四次处理数据***********************************************/
@@ -465,10 +641,12 @@ TEST_CASE("多目标测试", "[FunctionalityCheck][multi_track]")
     LOG_INFO << "第四批次处理 - 时间片 3";
     track_manager.draw_point_command(points_all);
 
+    sleep(1);
     status = initiator.process(points_all, new_tracks);
     REQUIRE(status == ProcessStatus::SUCCESS);
 
     tester.printHypothesisDistribution();
+    track_manager.print_tracker_manager();
 
     // 保持窗口显示
     while (g_running)
@@ -487,7 +665,9 @@ TEST_CASE("群目标测试", "[FunctionalityCheck][group_track]")
 
     // 生成目标航迹
     std::vector<std::array<double, 4>> params = {{10.0, 5.0, 100, 50},
-                                                 {10.5, 5.5, 100, 50}}; // 初始化
+                                                 {10.5, 5.5, 100, 50},
+                                                 {11.0, 5.5, 100, 50},
+                                                 {11.5, 5.5, 100, 50}}; // 初始化
     std::vector<TrackPoint> track_points = generate_target_points_xyv(0, params);
 
     // 处理点迹
