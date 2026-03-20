@@ -74,5 +74,5 @@ add_track_test(test_LogicBasedInitiator
 # add_test(NAME ClustDBSCAN COMMAND test_ClustDBSCAN "[dbscan][]")
 # add_test(NAME bitARRAY全面测试 COMMAND test_BitArray "[bitarray][]")
 # add_test(NAME HoughSlice功能测试 COMMAND test_HoughSlice "[FunctionalityCheck]")
-add_test(NAME LogicBasedInitiator功能测试 COMMAND test_LogicBasedInitiator "[Performance][single_track]")
+add_test(NAME LogicBasedInitiator功能测试 COMMAND test_LogicBasedInitiator "[FunctionalityCheck][multi_track]")
 
