@@ -65,7 +65,7 @@ void point_update_cv_with_noise(
     TrackPoint &p,
     double time_interval_s,
     unsigned seed,
-    double pos_noise_sigma_km = 0.0,  // 位置噪声标准差 (km)，默认10米
+    double pos_noise_sigma_km = 0.1,  // 位置噪声标准差 (km)，默认10米
     double doppler_noise_sigma = 0.1) // 多普勒噪声标准差 (m/s)
 {
     // 用seed创建随机数生成器

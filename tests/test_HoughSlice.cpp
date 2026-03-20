@@ -259,68 +259,59 @@ TEST_CASE("抗杂波能力", "[ClutterResistance]")
 
 TEST_CASE("抗杂波能力 Benchmark", "[Benchmark]")
 {
+    std::signal(SIGINT, signal_handler);
     size_t cluster_point_num = 40; // 每批杂波点数
     size_t target_num = 10;        // 目标点数
-    size_t num_rounds = 10;        // 测试轮数
+    size_t num_rounds = 4;         // 测试轮数（4轮）
 
     std::vector<double> processing_times; // 存储每轮处理时间
     std::vector<size_t> track_counts;     // 存储每轮产生的航迹数
 
     // 新增统计量
-    std::vector<double> detection_rates;     // 检测率
-    std::vector<double> false_alarm_rates;   // 虚警率
-    std::vector<double> doppler_error_rates; // Doppler误差
+    std::vector<double> detection_rates;   // 检测率
+    std::vector<double> false_alarm_rates; // 虚警率
+    std::vector<double> missed_rates;      // 漏检率
 
-    for (size_t round = 0; round < num_rounds; ++round)
+    // 每轮用不同的种子
+    unsigned int base_seed = Catch::getSeed();
+    base_seed = 3201435970; // 复现问题
+
+    // 生成目标点迹（10个目标）- 保存真实值用于对比
+    std::vector<TrackPoint> ground_truth_targets; // 真实目标状态（每个目标一个点，用于匹配标识）
+    auto target_points = generate_gaussian_points(
+        target_num, 0,
+        150, 10, 150, 10,
+        100.0, 50.0,
+        base_seed);
+
+    // 保存目标的真实SOG和COG（用于匹配）
+    for (const auto &p : target_points)
     {
-        // 每轮用不同的种子
-        unsigned int base_seed = Catch::getSeed() + round * 100;
+        TrackPoint truth = p;
+        ground_truth_targets.push_back(truth);
+    }
 
-        // 生成目标点迹（10个目标）- 保存真实值用于对比
-        std::vector<TrackPoint> ground_truth_targets; // 真实目标状态
-        auto target_points = generate_gaussian_points(
-            target_num, 0,
-            150, 10, 150, 10,
-            100.0, 50.0,
-            base_seed);
+    // 生成杂波点（足够多，供4轮使用）
+    auto clutter_points = generate_gaussian_points(
+        4 * cluster_point_num, 0,
+        150, 10, 150, 10,
+        100.0, 50.0,
+        base_seed + 1000);
 
-        // 保存目标的真实Doppler
-        for (const auto &p : target_points)
-        {
-            TrackPoint truth = p;
-            // 计算真实Doppler（径向速度）
-            double range = std::sqrt(p.x * p.x + p.y * p.y);
-            if (range > 1e-6)
-            {
-                double los_x = -p.x / range;
-                double los_y = -p.y / range;
-                truth.doppler = p.vx * los_x + p.vy * los_y;
-            }
-            ground_truth_targets.push_back(truth);
-        }
+    std::vector<TrackPoint> all_points;
+    std::vector<std::array<TrackPoint, 4>> new_tracks;
 
-        // 生成杂波点（足够多，供4轮使用）
-        auto clutter_points = generate_gaussian_points(
-            4 * cluster_point_num, 0,
-            150, 10, 150, 10,
-            100.0, 50.0,
-            base_seed + 1000);
+    // 创建算法实例
+    HoughSlice alg;
+    track_project::ManagementService track_manager(1.1, 1.5, 1.1, 1.5);
 
-        std::vector<TrackPoint> all_points;
-        std::vector<std::array<TrackPoint, 4>> new_tracks;
+    // 存储本轮检测到的航迹
+    std::vector<std::array<TrackPoint, 4>> detected_tracks;
 
-        // 创建算法实例
-        HoughSlice alg;
-        track_project::ManagementService track_manager(0.8, 1.8, 0.8, 1.8);
-
-        // 存储本轮检测到的目标
-        std::set<int> detected_target_indices;
-        std::vector<std::array<TrackPoint, 4>> detected_tracks;
-
-        // 计数回调 - 同时收集检测到的航迹
-        std::atomic<size_t> track_count{0};
-        alg.set_track_callback([&](const std::vector<std::array<TrackPoint, 4>> &tracks)
-                               {
+    // 计数回调 - 同时收集检测到的航迹
+    std::atomic<size_t> track_count{0};
+    alg.set_track_callback([&](const std::vector<std::array<TrackPoint, 4>> &tracks)
+                           {
             track_manager.create_track_command(const_cast<std::vector<std::array<TrackPoint, 4>> &>(tracks));
             track_count += tracks.size();
             
@@ -329,199 +320,182 @@ TEST_CASE("抗杂波能力 Benchmark", "[Benchmark]")
                 detected_tracks.push_back(track);
             } });
 
-        // 开始计时
-        auto start_time = std::chrono::high_resolution_clock::now();
+    // 开始计时
+    auto start_time = std::chrono::high_resolution_clock::now();
 
-        // 第1轮处理
-        track_manager.clear_all_command();
-        all_points.clear();
-        all_points.insert(all_points.end(), target_points.begin(), target_points.end());
-        all_points.insert(all_points.end(),
-                          clutter_points.begin(),
-                          clutter_points.begin() + cluster_point_num);
+    // 第1轮处理
+    track_manager.clear_all_command();
+    all_points.clear();
+    detected_tracks.clear(); // 清空上一轮的航迹
+    track_count = 0;
 
-        track_manager.draw_point_command(all_points);
-        alg.process(all_points, new_tracks);
+    all_points.insert(all_points.end(), target_points.begin(), target_points.end());
+    all_points.insert(all_points.end(),
+                      clutter_points.begin(),
+                      clutter_points.begin() + cluster_point_num);
 
-        // 第2轮处理
-        for (auto &p : target_points)
+    track_manager.draw_point_command(all_points);
+    alg.process(all_points, new_tracks);
+
+    // 第2轮处理
+    for (auto &p : target_points)
+    {
+        point_update_cv_with_noise(p, TIME_INTERVAL_S, base_seed + 500);
+    }
+    all_points.clear();
+    all_points.insert(all_points.end(), target_points.begin(), target_points.end());
+    all_points.insert(all_points.end(),
+                      clutter_points.begin() + cluster_point_num,
+                      clutter_points.begin() + 2 * cluster_point_num);
+
+    // track_manager.draw_point_command(all_points);
+    alg.process(all_points, new_tracks);
+
+    // 第3轮处理
+    for (auto &p : target_points)
+    {
+        point_update_cv_with_noise(p, TIME_INTERVAL_S, base_seed + 1000);
+    }
+    all_points.clear();
+    all_points.insert(all_points.end(), target_points.begin(), target_points.end());
+    all_points.insert(all_points.end(),
+                      clutter_points.begin() + 2 * cluster_point_num,
+                      clutter_points.begin() + 3 * cluster_point_num);
+
+    // track_manager.draw_point_command(all_points);
+    alg.process(all_points, new_tracks);
+
+    // 第4轮处理
+    for (auto &p : target_points)
+    {
+        point_update_cv_with_noise(p, TIME_INTERVAL_S, base_seed + 2000); // 添加噪声参数
+    }
+    all_points.clear();
+    all_points.insert(all_points.end(), target_points.begin(), target_points.end());
+    all_points.insert(all_points.end(),
+                      clutter_points.begin() + 3 * cluster_point_num,
+                      clutter_points.begin() + 4 * cluster_point_num);
+
+    track_manager.draw_point_command(all_points);
+    alg.process(all_points, new_tracks);
+
+    // 结束计时
+    auto end_time = std::chrono::high_resolution_clock::now();
+    auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end_time - start_time);
+
+    processing_times.push_back(duration.count() / 1000.0);
+    track_counts.push_back(track_count);
+
+    // ========== 统计检测率和虚警率（基于 SOG/COG）==========
+    const double COG_TOLERANCE_DEG = 5.0; // 航向容差（度）
+    const double SOG_TOLERANCE_KN = 2.0;  // 速度容差（节）
+    const int MIN_MATCH_POINTS = 3;       // 最少匹配点数
+
+    // 统计变量
+    std::set<int> matched_targets; // 已匹配的真实目标索引
+    int false_alarms = 0;          // 虚警数
+    int missed_targets = 0;        // 漏检数
+    int total_valid_matches = 0;   // 有效匹配数
+
+    // 标记每个真实目标是否被匹配（用于漏检统计）
+    std::vector<bool> target_matched(ground_truth_targets.size(), false);
+
+    // 遍历所有检测到的航迹，统计虚警
+    for (size_t i = 0; i < detected_tracks.size(); ++i)
+    {
+        const auto &track = detected_tracks[i];
+        bool track_matched = false;
+
+        // 找到匹配的真实目标
+        int matched_target_idx = -1;
+        int max_match_count = 0;
+
+        for (size_t j = 0; j < ground_truth_targets.size(); ++j)
         {
-            point_update_cv(p, TIME_INTERVAL_S);
-        }
-        all_points.clear();
-        all_points.insert(all_points.end(), target_points.begin(), target_points.end());
-        all_points.insert(all_points.end(),
-                          clutter_points.begin() + cluster_point_num,
-                          clutter_points.begin() + 2 * cluster_point_num);
+            const auto &target = ground_truth_targets[j];
+            int match_count = 0;
 
-        track_manager.draw_point_command(all_points);
-        alg.process(all_points, new_tracks);
-
-        // 第3轮处理
-        for (auto &p : target_points)
-        {
-            point_update_cv(p, TIME_INTERVAL_S);
-        }
-        all_points.clear();
-        all_points.insert(all_points.end(), target_points.begin(), target_points.end());
-        all_points.insert(all_points.end(),
-                          clutter_points.begin() + 2 * cluster_point_num,
-                          clutter_points.begin() + 3 * cluster_point_num);
-
-        track_manager.draw_point_command(all_points);
-        alg.process(all_points, new_tracks);
-
-        // 第4轮处理
-        for (auto &p : target_points)
-        {
-            point_update_cv(p, TIME_INTERVAL_S);
-        }
-        all_points.clear();
-        all_points.insert(all_points.end(), target_points.begin(), target_points.end());
-        all_points.insert(all_points.end(),
-                          clutter_points.begin() + 3 * cluster_point_num,
-                          clutter_points.begin() + 4 * cluster_point_num);
-
-        track_manager.draw_point_command(all_points);
-        alg.process(all_points, new_tracks);
-
-        // 结束计时
-        auto end_time = std::chrono::high_resolution_clock::now();
-        auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end_time - start_time);
-
-        processing_times.push_back(duration.count() / 1000.0);
-        track_counts.push_back(track_count);
-
-        // ========== 计算检测率和虚警率（基于Doppler）==========
-        const double POSITION_TOLERANCE_KM = 10.0; // 1公里匹配阈值
-        const double DOPPLER_TOLERANCE = 2.0;      // 2 m/s 多普勒容差
-
-        std::set<int> matched_targets;
-        int false_alarms = 0;
-
-        // 统计Doppler误差
-        double total_doppler_error = 0.0;
-        int valid_matches = 0;
-
-        for (const auto &track : detected_tracks)
-        {
-            bool matched = false;
-            const TrackPoint &last_point = track[3]; // 用最新的点
-
-            // 找最近的真实目标
-            double min_dist = POSITION_TOLERANCE_KM;
-            int best_target_idx = -1;
-
-            for (size_t i = 0; i < ground_truth_targets.size(); ++i)
+            // 用航迹的所有点进行匹配
+            for (size_t k = 0; k < 4 && k < track.size(); ++k)
             {
-                double dx = last_point.x - ground_truth_targets[i].x;
-                double dy = last_point.y - ground_truth_targets[i].y;
-                double dist = std::sqrt(dx * dx + dy * dy);
-
-                if (dist < min_dist)
+                // 检查速度和航向是否匹配
+                if (std::abs(track[k].sog - target.sog) < SOG_TOLERANCE_KN &&
+                    std::abs(track[k].cog - target.cog) < COG_TOLERANCE_DEG)
                 {
-                    min_dist = dist;
-                    best_target_idx = i;
+                    match_count++;
                 }
             }
 
-            if (best_target_idx >= 0)
+            if (match_count > max_match_count)
             {
-                // 找到了匹配的真实目标
-                matched = true;
-                matched_targets.insert(best_target_idx);
-
-                // 计算Doppler误差
-                double doppler_error = std::abs(last_point.doppler - ground_truth_targets[best_target_idx].doppler);
-                total_doppler_error += doppler_error;
-                valid_matches++;
-
-                // 如果Doppler误差太大，也算虚警
-                if (doppler_error > DOPPLER_TOLERANCE)
-                {
-                    false_alarms++;
-                }
-            }
-            else
-            {
-                false_alarms++;
+                max_match_count = match_count;
+                matched_target_idx = j;
             }
         }
 
-        // 计算本轮的检测率、虚警率和Doppler误差
-        double detection_rate = static_cast<double>(matched_targets.size()) / target_num;
-        double false_alarm_rate = static_cast<double>(false_alarms) / track_count;
-        double doppler_error = (valid_matches > 0) ? (total_doppler_error / valid_matches) : 0.0;
+        // 判断是否匹配成功
+        if (matched_target_idx >= 0 && max_match_count >= MIN_MATCH_POINTS)
+        {
+            track_matched = true;
+            matched_targets.insert(matched_target_idx);
+            target_matched[matched_target_idx] = true;
+            total_valid_matches++;
 
-        detection_rates.push_back(detection_rate);
-        false_alarm_rates.push_back(false_alarm_rate);
-        doppler_error_rates.push_back(doppler_error);
-
-        LOG_INFO << "第 " << round + 1 << " 轮: 处理时间 = "
-                 << std::fixed << std::setprecision(2) << processing_times.back()
-                 << " ms, 航迹数 = " << track_counts.back()
-                 << ", 检测率 = " << std::setprecision(1) << detection_rate * 100 << "%"
-                 << ", 虚警率 = " << std::setprecision(1) << false_alarm_rate * 100 << "%"
-                 << ", Doppler误差 = " << std::setprecision(2) << doppler_error << " m/s";
+            LOG_DEBUG << "航迹 " << i << " 匹配到目标 " << matched_target_idx
+                      << "，匹配点数: " << max_match_count;
+        }
+        else
+        {
+            false_alarms++;
+            LOG_INFO << "航迹 " << i << " 为虚警，最大匹配点数: " << max_match_count;
+        }
     }
 
-    // 计算统计信息
-    auto calc_mean = [](const std::vector<double> &v)
+    // 统计漏检目标
+    for (size_t j = 0; j < ground_truth_targets.size(); ++j)
     {
-        return std::accumulate(v.begin(), v.end(), 0.0) / v.size();
-    };
-
-    auto calc_variance = [](const std::vector<double> &v, double mean)
-    {
-        double sum = 0.0;
-        for (double x : v)
+        if (!target_matched[j])
         {
-            sum += (x - mean) * (x - mean);
+            missed_targets++;
+            LOG_INFO << "目标 " << j << " 未被检测到";
         }
-        return sum / v.size();
-    };
+    }
 
-    auto calc_stddev = [](double variance)
-    {
-        return std::sqrt(variance);
-    };
+    // 计算统计指标
+    int total_targets = ground_truth_targets.size();
+    int total_tracks = detected_tracks.size();
+
+    double detection_rate = (total_targets - missed_targets) * 100.0 / total_targets;
+    double false_alarm_rate = (total_tracks > 0) ? false_alarms * 100.0 / total_tracks : 0.0;
+    double missed_rate = missed_targets * 100.0 / total_targets;
+
+    // 存储统计结果
+    detection_rates.push_back(detection_rate);
+    false_alarm_rates.push_back(false_alarm_rate);
+    missed_rates.push_back(missed_rate);
 
     // 输出统计结果
-    double time_mean = calc_mean(processing_times);
-    double time_var = calc_variance(processing_times, time_mean);
-    double time_std = calc_stddev(time_var);
+    LOG_INFO << "========== 统计结果 ==========";
+    LOG_INFO << "真实目标数: " << total_targets;
+    LOG_INFO << "生成航迹数: " << total_tracks;
+    LOG_INFO << "正确航迹数: " << (total_tracks - false_alarms);
+    LOG_INFO << "虚警航迹数: " << false_alarms;
+    LOG_INFO << "漏检目标数: " << missed_targets;
+    LOG_INFO << "检测率: " << detection_rate << "%";
+    LOG_INFO << "虚警率: " << false_alarm_rate << "%";
+    LOG_INFO << "漏检率: " << missed_rate << "%";
 
-    double track_mean = calc_mean(std::vector<double>(track_counts.begin(), track_counts.end()));
-    double track_var = calc_variance(std::vector<double>(track_counts.begin(), track_counts.end()), track_mean);
-    double track_std = calc_stddev(track_var);
+    // 可选：输出平均值
+    LOG_INFO << "========== 性能指标 ==========";
+    LOG_INFO << "平均处理时间: " << processing_times.back() << " ms";
+    LOG_INFO << "平均检测率: " << detection_rate << "%";
+    LOG_INFO << "平均虚警率: " << false_alarm_rate << "%";
 
-    LOG_INFO << "\n========== 抗杂波能力 Benchmark 结果 ==========";
-    LOG_INFO << "测试配置: " << num_rounds << " 轮, 每轮 " << target_num
-             << " 目标, " << cluster_point_num << " 杂波/帧";
-
-    LOG_INFO << "\n处理时间统计 (ms):";
-    LOG_INFO << "  平均值: " << std::fixed << std::setprecision(2) << time_mean << " ms";
-    LOG_INFO << "  标准差: " << std::fixed << std::setprecision(2) << time_std << " ms";
-
-    LOG_INFO << "\n检测性能统计:";
-    double det_mean = calc_mean(detection_rates);
-    double fa_mean = calc_mean(false_alarm_rates);
-    double dop_mean = calc_mean(doppler_error_rates);
-
-    LOG_INFO << "  平均检测率: " << std::fixed << std::setprecision(1) << det_mean * 100 << "%";
-    LOG_INFO << "  平均虚警率: " << std::fixed << std::setprecision(2) << fa_mean * 100 << "%";
-    LOG_INFO << "  平均Doppler误差: " << std::fixed << std::setprecision(2) << dop_mean << " m/s";
-
-    LOG_INFO << "\n航迹数统计:";
-    LOG_INFO << "  平均值: " << std::fixed << std::setprecision(2) << track_mean;
-    LOG_INFO << "  标准差: " << std::fixed << std::setprecision(2) << track_std;
-    LOG_INFO << "  最小值: " << *std::min_element(track_counts.begin(), track_counts.end());
-    LOG_INFO << "  最大值: " << *std::max_element(track_counts.begin(), track_counts.end());
-    LOG_INFO << "================================================";
-
-    // // 性能断言
-    // CHECK(time_mean < 100.0);
-    // CHECK(det_mean > 0.8); // 检测率 > 80%
-    // CHECK(fa_mean < 0.3);  // 虚警率 < 30%
-    // CHECK(dop_mean < 2.0); // Doppler误差 < 2 m/s
+    // 断言（根据期望值调整）
+    // REQUIRE(detection_rate > 80.0);   // 检测率应大于80%
+    // REQUIRE(false_alarm_rate < 20.0); // 虚警率应小于20%
+    while (g_running)
+    {
+        wait_seconds(5); // 可被 CTRL+C 中断的等待
+    }
 }

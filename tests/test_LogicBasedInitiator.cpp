@@ -373,7 +373,8 @@ TEST_CASE("多目标测试", "[FunctionalityCheck][multi_track]")
 
     // 随机数种子
     unsigned int seed = Catch::getSeed();
-    seed = 42;
+    // seed = 1343091126;
+    unsigned int cluster_seed[4] = {seed + 1, seed + 2, seed + 3, seed + 4};
 
     // 目标数量
     std::vector<int> target_num = {10, 10, 10, 10};
@@ -381,10 +382,10 @@ TEST_CASE("多目标测试", "[FunctionalityCheck][multi_track]")
     int cluster_num = 200;
 
     // 目标创建
-    auto points1 = generate_gaussian_points(target_num[0], 0, 150, 10, 150, 10, 100.0, 50.0, seed++);
-    auto points2 = generate_gaussian_points(target_num[1], 0, 80, 10, 80, 10, 100.0, 50.0, seed++);
-    auto points3 = generate_gaussian_points(target_num[2], 0, 80, 10, 150, 10, 100.0, 50.0, seed++);
-    auto points4 = generate_gaussian_points(target_num[3], 0, 150, 10, 80, 10, 100.0, 50.0, seed++);
+    auto points1 = generate_gaussian_points(target_num[0], 0, 250, 10, 150, 10, 100.0, 50.0, seed++);
+    auto points2 = generate_gaussian_points(target_num[1], 0, 180, 10, 280, 10, 100.0, 50.0, seed++);
+    auto points3 = generate_gaussian_points(target_num[2], 0, 180, 10, 150, 10, 100.0, 50.0, seed++);
+    auto points4 = generate_gaussian_points(target_num[3], 0, 250, 10, 280, 10, 100.0, 50.0, seed++);
     auto points_cluster = std::vector<TrackPoint>(cluster_num);
 
     // 输入和输出
@@ -417,7 +418,7 @@ TEST_CASE("多目标测试", "[FunctionalityCheck][multi_track]")
                  << ", sigma_x=" << sigma_x << ", sigma_y=" << sigma_y;
     }
 
-    points_cluster = generate_uniform_points(200, 0, 60, 170, 60, 170, 150, 100, rand() % 10000);
+    points_cluster = generate_uniform_points(cluster_num, 0, 60, 170, 60, 170, 150, 100, cluster_seed[0]);
     points_all.insert(points_all.end(), points_cluster.begin(), points_cluster.end());
 
     //*****************************************第一次处理数据***********************************************/
@@ -432,7 +433,7 @@ TEST_CASE("多目标测试", "[FunctionalityCheck][multi_track]")
     points_all.resize(target_num_sum);
     extrapolator.update(points_all, TIME_INTERVAL_S);
     // 重置杂波点
-    points_cluster = generate_uniform_points(200, 0, 60, 170, 60, 170, 150, 100, rand() % 10000);
+    points_cluster = generate_uniform_points(cluster_num, 0, 60, 170, 60, 170, 150, 100, cluster_seed[1]);
     points_all.insert(points_all.end(), points_cluster.begin(), points_cluster.end());
 
     track_manager.draw_point_command(points_all);
@@ -444,7 +445,7 @@ TEST_CASE("多目标测试", "[FunctionalityCheck][multi_track]")
     points_all.resize(target_num_sum);
     extrapolator.update(points_all, TIME_INTERVAL_S);
     // 重置杂波点
-    points_cluster = generate_uniform_points(200, 0, 60, 170, 60, 170, 150, 100, rand() % 10000);
+    points_cluster = generate_uniform_points(cluster_num, 0, 60, 170, 60, 170, 150, 100, cluster_seed[2]);
     points_all.insert(points_all.end(), points_cluster.begin(), points_cluster.end());
 
     track_manager.draw_point_command(points_all);
@@ -456,7 +457,7 @@ TEST_CASE("多目标测试", "[FunctionalityCheck][multi_track]")
     points_all.resize(target_num_sum);
     extrapolator.update(points_all, TIME_INTERVAL_S);
     // 重置杂波点
-    points_cluster = generate_uniform_points(200, 0, 60, 170, 60, 170, 150, 100, rand() % 10000);
+    points_cluster = generate_uniform_points(cluster_num, 0, 60, 170, 60, 170, 150, 100, cluster_seed[3]);
     points_all.insert(points_all.end(), points_cluster.begin(), points_cluster.end());
 
     // 绘制点迹
@@ -555,62 +556,368 @@ TEST_CASE("多目标测试", "[FunctionalityCheck][multi_track]")
 
 TEST_CASE("群目标测试", "[FunctionalityCheck][group_track]")
 {
+    std::signal(SIGINT, signal_handler);
+
+    // 随机数种子
+    unsigned int seed = Catch::getSeed();
+    seed = 42;
+
+    // 群目标：4个同向同速、位置密集的目标
+    std::vector<std::array<double, 4>> params = {
+        {80.0, 10.0, 80, 10},  // 目标1
+        {95.0, 10.0, 95, 10},  // 目标2，相距0.7km
+        {110.0, 10.0, 110, 10},  // 目标3，相距0.5km
+        {125.0, 10.0, 125, 10}   // 目标4，相距0.7km
+    };
+    int target_num_sum = params.size();
+
+    // 生成第一帧点迹
+    auto points_all = generate_target_points_xyv(0, params);
+    std::vector<std::array<TrackPoint, 4>> new_tracks(100);
+
+    // 创建实例
     LogicBasedInitiator initiator;
     test_LogicBasedInitiator tester(initiator);
+    TrackExtrapolator extrapolator(seed);
+    track_project::ManagementService track_manager(0.60, 1.40, 0.08, 0.16);
 
-    // 误差分布表格保存
-    // REQUIRE(tester.saveErrorDistributionToDat("../error_distribution.dat") == true);
+    // 绑定回调函数，显示航迹
+    initiator.set_track_callback([&track_manager](const std::vector<std::array<TrackPoint, 4>> &tracks)
+                                 {
+        LOG_INFO << "回调函数被调用，生成了 " << tracks.size() << " 条航迹";
+        track_manager.create_track_command(const_cast<std::vector<std::array<TrackPoint, 4>> &>(tracks)); });
 
-    // 生成目标航迹
-    std::vector<std::array<double, 4>> params = {{10.0, 5.0, 100, 50},
-                                                 {10.5, 5.5, 100, 50},
-                                                 {11.0, 5.5, 100, 50},
-                                                 {11.5, 5.5, 100, 50}}; // 初始化
-    std::vector<TrackPoint> track_points = generate_target_points_xyv(0, params);
-
-    // 处理点迹
-    std::vector<std::array<TrackPoint, 4>> new_tracks;
-    ProcessStatus status = initiator.process(track_points, new_tracks);
-    REQUIRE(status == ProcessStatus::SUCCESS);
-
-    LOG_INFO << "第一批次结果";
-    tester.printHypothesisDistribution();                                       // 打印当前假设节点分布
-    tester.saveHypothesisDistributionToDat("../hypothesis_distribution_1.dat"); // 保存假设节点分布到DAT文件
-
-    for (auto point : track_points)
+    //****************************************预处理数据***********************************************/
+    track_manager.clear_all_command();
+    
+    for (size_t i = 0; i < points_all.size(); ++i)
     {
-        point_update_cv(point, 1000); // 更新点迹位置，模拟1秒后的观测
+        auto [sigma_x, sigma_y] = extrapolator.getErrorDistribution(points_all[i].x, points_all[i].y);
+        LOG_INFO << "目标点迹[" << i << "]: x=" << points_all[i].x << ", y=" << points_all[i].y
+                 << ", sog=" << points_all[i].sog << ", cog=" << points_all[i].cog
+                 << ", sigma_x=" << sigma_x << ", sigma_y=" << sigma_y;
     }
-    status = initiator.process(track_points, new_tracks);
+
+    //*****************************************第一次处理数据***********************************************/
+    LOG_INFO << "第一批次处理 - 时间片 0";
+    track_manager.draw_point_command(points_all);
+    ProcessStatus status = initiator.process(points_all, new_tracks);
     REQUIRE(status == ProcessStatus::SUCCESS);
 
-    LOG_INFO << "第二批次结果";
-    tester.printHypothesisDistribution();                                       // 打印当前假设节点分布
-    tester.saveHypothesisDistributionToDat("../hypothesis_distribution_2.dat"); // 保存假设节点分布到DAT文件
+    //*****************************************第二次处理数据***********************************************/
+    LOG_INFO << "第二批次处理 - 时间片 1";
+    extrapolator.update(points_all, TIME_INTERVAL_S);
+    track_manager.draw_point_command(points_all);
+    status = initiator.process(points_all, new_tracks);
+    REQUIRE(status == ProcessStatus::SUCCESS);
+    
+    //*****************************************第三次处理数据***********************************************/
+    LOG_INFO << "第三批次处理 - 时间片 2";
+    extrapolator.update(points_all, TIME_INTERVAL_S);
+    track_manager.draw_point_command(points_all);
+    status = initiator.process(points_all, new_tracks);
+    REQUIRE(status == ProcessStatus::SUCCESS);
+    
+    //*****************************************第四次处理数据***********************************************/
+    LOG_INFO << "第四批次处理 - 时间片 3";
+    extrapolator.update(points_all, TIME_INTERVAL_S);
+    track_manager.draw_point_command(points_all);
+    sleep(1);
+    status = initiator.process(points_all, new_tracks);
+    REQUIRE(status == ProcessStatus::SUCCESS);
+    tester.printHypothesisDistribution();
 
-    for (auto point : track_points)
+    //*****************************************统计数据***********************************************/
+    int true_track_count = 0;
+    int false_track_count = 0;
+    int missed_target_count = 0;
+    std::vector<bool> target_matched(points_all.size(), false);
+
+    for (size_t i = 0; i < new_tracks.size(); ++i)
     {
-        point_update_cv(point, 1000); // 更新点迹位置，模拟1秒后的观测
+        const auto &track = new_tracks[i];
+        bool track_valid = false;
+
+        for (size_t j = 0; j < points_all.size(); ++j)
+        {
+            size_t point_match = 0;
+            for (size_t k = 0; k < 4; ++k)
+            {
+                if (std::abs(track[k].sog - points_all[j].sog) < 1e-4 &&
+                    std::abs(track[k].cog - points_all[j].cog) < 1e-4)
+                {
+                    point_match++;
+                }
+            }
+
+            if (point_match > 2)
+            {
+                track_valid = true;
+                target_matched[j] = true;
+                break;
+            }
+        }
+
+        if (!track_valid)
+        {
+            false_track_count++;
+            LOG_INFO << "第" << i << "条航迹为假航迹";
+        }
+        else
+        {
+            true_track_count++;
+        }
     }
-    status = initiator.process(track_points, new_tracks);
-    REQUIRE(status == ProcessStatus::SUCCESS);
 
-    LOG_INFO << "第三批次结果";
-    tester.printHypothesisDistribution();                                       // 打印当前假设节点分布
-    tester.saveHypothesisDistributionToDat("../hypothesis_distribution_3.dat"); // 保存假设节点分布到DAT文件
-
-    for (auto point : track_points)
+    for (size_t j = 0; j < points_all.size(); ++j)
     {
-        point_update_cv(point, 1000); // 更新点迹位置，模拟1秒后的观测
+        if (!target_matched[j])
+        {
+            missed_target_count++;
+            LOG_INFO << "第" << j << "个目标未被检测到";
+        }
     }
-    status = initiator.process(track_points, new_tracks);
-    REQUIRE(status == ProcessStatus::SUCCESS);
 
-    LOG_INFO << "第四批次结果";
-    tester.printHypothesisDistribution(); // 打印当前假设节点分布
+    int total_targets = points_all.size();
+    int total_tracks = new_tracks.size();
+    double detection_rate = (total_targets - missed_target_count) * 100.0 / total_targets;
+    double false_alarm_rate = false_track_count * 100.0 / total_tracks;
+
+    LOG_INFO << "========== 群目标统计结果 ==========";
+    LOG_INFO << "真实目标数: " << total_targets;
+    LOG_INFO << "生成航迹数: " << total_tracks;
+    LOG_INFO << "正确航迹数: " << true_track_count;
+    LOG_INFO << "虚警航迹数: " << false_track_count;
+    LOG_INFO << "漏检目标数: " << missed_target_count;
+    LOG_INFO << "检测率: " << detection_rate << "%";
+    LOG_INFO << "虚警率: " << false_alarm_rate << "%";
+
 
     while (g_running)
     {
-        wait_seconds(5); // 可被 CTRL+C 中断的等待
+        wait_seconds(5);
     }
+}
+
+#include <chrono> // 添加时间相关头文件
+
+TEST_CASE("多目标测试", "[Benchmark][multi_track]")
+{
+    std::signal(SIGINT, signal_handler); // 添加信号处理
+
+    // 随机数种子
+    unsigned int seed = Catch::getSeed();
+    // seed = 1343091126;
+
+    // 由seed,获取四个随机数用于生成杂波
+    unsigned int cluster_seed[4] = {seed + 1, seed + 2, seed + 3, seed + 4};
+
+    // 目标数量
+    std::vector<int> target_num = {10, 10, 10, 10};
+    int target_num_sum = std::accumulate(target_num.begin(), target_num.end(), 0);
+    int cluster_num = 200;
+
+    // 目标创建
+    auto points1 = generate_gaussian_points(target_num[0], 0, 280, 10, 280, 10, 100.0, 50.0, seed++);
+    auto points2 = generate_gaussian_points(target_num[1], 0, 280, 10, 150, 10, 100.0, 50.0, seed++);
+    auto points3 = generate_gaussian_points(target_num[2], 0, 150, 10, 280, 10, 100.0, 50.0, seed++);
+    auto points4 = generate_gaussian_points(target_num[3], 0, 150, 10, 150, 10, 100.0, 50.0, seed++);
+    auto points_cluster = std::vector<TrackPoint>(cluster_num);
+    std::vector<double> cluster_param = {
+        0,   // 统一时间戳
+        160, // 最小距离
+        270, // 最大距离
+        160, // 最小距离
+        270, // 最大距离
+        100, // 速度中心
+        50,  // 速度均值
+    };
+
+    // 输入和输出
+    std::vector<TrackPoint> points_all; // 所有点迹
+    std::vector<std::array<TrackPoint, 4>> new_tracks(100);
+
+    // 创建实例
+    LogicBasedInitiator initiator;
+    test_LogicBasedInitiator tester(initiator); // DEBUG容器
+    TrackExtrapolator extrapolator(seed);       // 使用相同的随机数种子创建航迹外推器，保证噪声的一致性
+
+    // 空回调加速
+    initiator.set_track_callback([&](const std::vector<std::array<TrackPoint, 4>> &tracks) {});
+
+    //****************************************预处理数据***********************************************/
+    points_all.insert(points_all.end(), points1.begin(), points1.end());
+    points_all.insert(points_all.end(), points2.begin(), points2.end());
+    points_all.insert(points_all.end(), points3.begin(), points3.end());
+    points_all.insert(points_all.end(), points4.begin(), points4.end());
+    for (size_t i = 0; i < points_all.size(); ++i)
+    {
+        auto [sigma_x, sigma_y] = extrapolator.getErrorDistribution(points_all[i].x, points_all[i].y); // 预热误差分布表格
+        // LOG_INFO << "目标点迹[" << i << "]: x=" << points_all[i].x << ", y=" << points_all[i].y
+        //          << ", longitude=" << points_all[i].longitude << ", latitude=" << points_all[i].latitude
+        //          << ", sigma_x=" << sigma_x << ", sigma_y=" << sigma_y;
+    }
+
+    points_cluster = generate_uniform_points(cluster_num, cluster_param[0], cluster_param[1], cluster_param[2],
+                                             cluster_param[3], cluster_param[4], cluster_param[5], cluster_param[6], cluster_seed[0]);
+    points_all.insert(points_all.end(), points_cluster.begin(), points_cluster.end());
+
+    // 存储每次处理的耗时（微秒）
+    std::vector<long long> process_times_us;
+
+    //*****************************************第一次处理数据***********************************************/
+    LOG_INFO << "第一批次处理 - 时间片 0";
+    auto start = std::chrono::high_resolution_clock::now();
+    ProcessStatus status = initiator.process(points_all, new_tracks);
+    auto end = std::chrono::high_resolution_clock::now();
+    auto duration_us = std::chrono::duration_cast<std::chrono::microseconds>(end - start).count();
+    process_times_us.push_back(duration_us);
+    // LOG_INFO << "第一批次处理耗时: " << duration_us << " 微秒";
+    REQUIRE(status == ProcessStatus::SUCCESS);
+
+    //*****************************************第二次处理数据***********************************************/
+    LOG_INFO << "第二批次处理 - 时间片 1";
+    // 更新点迹位置（带噪声）
+    points_all.resize(target_num_sum);
+    extrapolator.update(points_all, TIME_INTERVAL_S);
+    // 重置杂波点
+    points_cluster = generate_uniform_points(cluster_num, cluster_param[0], cluster_param[1], cluster_param[2],
+                                             cluster_param[3], cluster_param[4], cluster_param[5], cluster_param[6], cluster_seed[1]);
+    points_all.insert(points_all.end(), points_cluster.begin(), points_cluster.end());
+
+    start = std::chrono::high_resolution_clock::now();
+    status = initiator.process(points_all, new_tracks);
+    end = std::chrono::high_resolution_clock::now();
+    duration_us = std::chrono::duration_cast<std::chrono::microseconds>(end - start).count();
+    process_times_us.push_back(duration_us);
+    // LOG_INFO << "第二批次处理耗时: " << duration_us << " 微秒";
+    REQUIRE(status == ProcessStatus::SUCCESS);
+
+    //*****************************************第三次处理数据***********************************************/
+    LOG_INFO << "第三批次处理 - 时间片 2";
+    // 更新点迹位置（带噪声）
+    points_all.resize(target_num_sum);
+    extrapolator.update(points_all, TIME_INTERVAL_S);
+    // 重置杂波点
+    points_cluster = generate_uniform_points(cluster_num, cluster_param[0], cluster_param[1], cluster_param[2],
+                                             cluster_param[3], cluster_param[4], cluster_param[5], cluster_param[6], cluster_seed[2]);
+    points_all.insert(points_all.end(), points_cluster.begin(), points_cluster.end());
+
+    start = std::chrono::high_resolution_clock::now();
+    status = initiator.process(points_all, new_tracks);
+    end = std::chrono::high_resolution_clock::now();
+    duration_us = std::chrono::duration_cast<std::chrono::microseconds>(end - start).count();
+    process_times_us.push_back(duration_us);
+    // LOG_INFO << "第三批次处理耗时: " << duration_us << " 微秒";
+    REQUIRE(status == ProcessStatus::SUCCESS);
+
+    //*****************************************第四次处理数据***********************************************/
+    LOG_INFO << "第四批次处理 - 时间片 3";
+    // 更新点迹位置（带噪声）
+    points_all.resize(target_num_sum);
+    extrapolator.update(points_all, TIME_INTERVAL_S);
+    // 重置杂波点
+    points_cluster = generate_uniform_points(cluster_num, cluster_param[0], cluster_param[1], cluster_param[2],
+                                             cluster_param[3], cluster_param[4], cluster_param[5], cluster_param[6], cluster_seed[3]);
+    points_all.insert(points_all.end(), points_cluster.begin(), points_cluster.end());
+
+    // 绘制点迹
+
+    // 画航迹，避免线程冲突
+    start = std::chrono::high_resolution_clock::now();
+    status = initiator.process(points_all, new_tracks);
+    end = std::chrono::high_resolution_clock::now();
+    duration_us = std::chrono::duration_cast<std::chrono::microseconds>(end - start).count();
+    process_times_us.push_back(duration_us);
+    // LOG_INFO << "第四批次处理耗时: " << duration_us << " 微秒";
+    REQUIRE(status == ProcessStatus::SUCCESS);
+
+    // 输出所有批次的统计信息
+    LOG_INFO << "========== 处理时间统计 ==========";
+    long long total_time_us = 0;
+    for (size_t i = 0; i < process_times_us.size(); ++i)
+    {
+        // LOG_INFO << "批次 " << i + 1 << " 耗时: " << process_times_us[i] << " 微秒";
+        total_time_us += process_times_us[i];
+    }
+    LOG_INFO << "总耗时: " << total_time_us << " 微秒 (" << total_time_us / 1000.0 << " 毫秒)";
+    LOG_INFO << "平均耗时: " << total_time_us / process_times_us.size() << " 微秒";
+
+    //*****************************************统计数据***********************************************/
+    points_all.resize(target_num_sum); // 只保留目标点迹，去掉杂波点迹
+    //*****************************************统计数据***********************************************/
+    // 初始化统计变量
+    int true_track_count = 0;    // 正确航迹数
+    int false_track_count = 0;   // 虚警航迹数
+    int missed_target_count = 0; // 漏检目标数
+
+    // 标记目标是否被匹配到
+    std::vector<bool> target_matched(points_all.size(), false);
+
+    // 遍历所有生成的航迹，统计虚警
+    for (size_t i = 0; i < new_tracks.size(); ++i)
+    {
+        const auto &track = new_tracks[i];
+        bool track_valid = false;
+
+        for (size_t j = 0; j < points_all.size(); ++j)
+        {
+            size_t point_match = 0;
+            for (size_t k = 0; k < 4; ++k)
+            {
+                // 作为AIS信息，我没改过，而且匀速直线，因此速度和航向不变，直接用来当匹配标识了
+                if (track[k].sog < points_all[j].sog + 1e-4 && track[k].sog > points_all[j].sog - 1e-4 &&
+                    track[k].cog < points_all[j].cog + 1e-4 && track[k].cog > points_all[j].cog - 1e-4)
+                {
+                    point_match++;
+                }
+            }
+
+            if (point_match > 2) // 认为匹配成功，至少有3个点的速度和航向都匹配
+            {
+                track_valid = true;
+                target_matched[j] = true; // 标记该目标已被匹配
+                break;
+            }
+        }
+
+        if (!track_valid)
+        {
+            false_track_count++;
+            LOG_INFO << "第" << i << "条航迹为假航迹";
+        }
+        else
+        {
+            true_track_count++;
+        }
+    }
+
+    // 统计漏检目标数
+    for (size_t j = 0; j < points_all.size(); ++j)
+    {
+        if (!target_matched[j])
+        {
+            missed_target_count++;
+            // LOG_INFO << "第" << j << "个目标未被检测到";
+        }
+    }
+
+    // 计算统计指标
+    int total_targets = points_all.size();
+    int total_tracks = new_tracks.size();
+
+    double detection_rate = (total_targets - missed_target_count) * 100.0 / total_targets; // 检测率
+    double false_alarm_rate = false_track_count * 100.0 / total_tracks;                    // 虚警率
+    double missed_rate = missed_target_count * 100.0 / total_targets;                      // 漏检率
+
+    // 输出统计结果
+    LOG_INFO << "========== 统计结果 ==========";
+    LOG_INFO << "真实目标数: " << total_targets;
+    LOG_INFO << "生成航迹数: " << total_tracks;
+    LOG_INFO << "正确航迹数: " << true_track_count;
+    LOG_INFO << "虚警航迹数: " << false_track_count;
+    LOG_INFO << "漏检目标数: " << missed_target_count;
+    LOG_INFO << "检测率: " << detection_rate << " %";
+    LOG_INFO << "虚警率: " << false_alarm_rate << " %";
+    LOG_INFO << "漏检率: " << missed_rate << " %";
 }

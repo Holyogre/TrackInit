@@ -316,7 +316,7 @@ namespace track_project::trackinit
             // 转换为位数：doppler_tolerance_bits = round((Δv / VELOCITY_MAX) * DOPPLER_BIT_NUM) //向上取整
             doppler_tolerance_bits = static_cast<int>(std::round((delta_v / track_project::VELOCITY_MAX) * HOUGHSLICE_DOPPLER_BIT_NUM));
             doppler_tolerance_bits = std::clamp(doppler_tolerance_bits + 2, 1, static_cast<int>(HOUGHSLICE_DOPPLER_BIT_NUM) - 1);
-            LOG_INFO << "点迹(" << point.x << "," << point.y << "): dt=" << dt << "s, R_0=" << R_0 << "m, R_1=" << R_1 << "m, Δv=" << delta_v << "m/s, doppler_tolerance_bits=" << doppler_tolerance_bits;
+            // LOG_INFO << "点迹(" << point.x << "," << point.y << "): dt=" << dt << "s, R_0=" << R_0 << "m, R_1=" << R_1 << "m, Δv=" << delta_v << "m/s, doppler_tolerance_bits=" << doppler_tolerance_bits;
         }
 
         // 依据doppler和VELOCITY_MAX计算所有可能的航向角度序列
