@@ -6,8 +6,8 @@ namespace track_project
     constexpr double BASE_LONGITUDE = 0.0;
     constexpr double BASE_LATITUDE = 0.0;
     constexpr double BASE_NORMAL_DIRECTION = 0.0;      // 法线方向：北偏东，单位°，范围仅允许填写[0,360)，不然结果错误
-    constexpr double BASE_THETA_SIGMA_DEG = 0.1;       // 先验航向误差标准差，单位°，标准参考0.4
-    constexpr double BASE_R_SIGMA_KM = 0.1;            // 先验距离误差标准差，单位KM，标准参考1.0
+    constexpr double BASE_THETA_SIGMA_DEG = 0.4;       // 先验航向误差标准差，单位°，标准参考0.4
+    constexpr double BASE_R_SIGMA_KM = 1.0;            // 先验距离误差标准差，单位KM，标准参考1.0
     constexpr double BASE_DOPPLER_TOLERANCE_M_S = 0.5; // DOPPLER容差，单位m/s，标准参考0.5
 
     // 目标基础信息

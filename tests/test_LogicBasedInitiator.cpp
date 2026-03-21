@@ -603,6 +603,7 @@ TEST_CASE("群目标测试", "[FunctionalityCheck][group_track]")
     track_manager.draw_point_command(points_all);
     ProcessStatus status = initiator.process(points_all, new_tracks);
     REQUIRE(status == ProcessStatus::SUCCESS);
+    tester.printHypothesisDistribution();
 
     //*****************************************第二次处理数据***********************************************/
     LOG_INFO << "第二批次处理 - 时间片 1";
@@ -610,6 +611,7 @@ TEST_CASE("群目标测试", "[FunctionalityCheck][group_track]")
     track_manager.draw_point_command(points_all);
     status = initiator.process(points_all, new_tracks);
     REQUIRE(status == ProcessStatus::SUCCESS);
+    tester.printHypothesisDistribution();
     
     //*****************************************第三次处理数据***********************************************/
     LOG_INFO << "第三批次处理 - 时间片 2";
@@ -617,6 +619,7 @@ TEST_CASE("群目标测试", "[FunctionalityCheck][group_track]")
     track_manager.draw_point_command(points_all);
     status = initiator.process(points_all, new_tracks);
     REQUIRE(status == ProcessStatus::SUCCESS);
+    tester.printHypothesisDistribution();
     
     //*****************************************第四次处理数据***********************************************/
     LOG_INFO << "第四批次处理 - 时间片 3";

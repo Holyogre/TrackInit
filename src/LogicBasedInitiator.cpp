@@ -474,10 +474,9 @@ namespace track_project::trackinit
                 continue; // depth=3 节点不加入假设层
             }
 
-            // 加入对应深度的假设层（注意：原代码用 hypothesis_layers_[0]，应改为 node[best_index].depth）
-            hypothesis_layers_[node[best_index].depth].push_back(node[best_index]);
-            current_hypothesis_index_[node[best_index].bin_index].push_back(
-                &hypothesis_layers_[node[best_index].depth].back());
+            // 加入对应深度的假设层
+            hypothesis_layers_[0].push_back(node[best_index]);
+            current_hypothesis_index_[node[best_index].bin_index].push_back(&hypothesis_layers_[0].back());
         }
 
         // 第五步：处理depth=3的节点，直接输出//TODO理论上应该置信度不够的时候再等一批，但是框架不允许了，面向论文CODE，暂时不动了

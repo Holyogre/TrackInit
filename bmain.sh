@@ -10,7 +10,7 @@
 
 # ===== 用户配置区 =====
 CLEAN_BUILD="modeB"   # modeA:彻底删除构建目录; modeB:用make clean; modeC:不清理
-DEBUG_MODE=false       # true: Debug模式; false: Release模式
+DEBUG_MODE=true       # true: Debug模式; false: Release模式
 TEST_VERBOSE=true     # true: 输出详细测试报告; false: 仅输出错误
 # ======================
 
