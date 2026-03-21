@@ -564,10 +564,10 @@ TEST_CASE("群目标测试", "[FunctionalityCheck][group_track]")
 
     // 群目标：4个同向同速、位置密集的目标
     std::vector<std::array<double, 4>> params = {
-        {90.0, 10.0, 200, 10},  // 目标1
-        {95.0, 10.0, 200, 10},  // 目标2，相距0.7km
-        {100.0, 10.0, 200, 10}, // 目标3，相距0.5km
-        {105.0, 10.0, 200, 10}  // 目标4，相距0.7km
+        {90.0, 10.0, 200, 10}, // 目标1
+        {94.0, 10.0, 200, 10}, // 目标2，相距0.7km
+        {98.0, 10.0, 200, 10}, // 目标3，相距0.5km
+        {102.0, 10.0, 200, 10} // 目标4，相距0.7km
     };
     int target_num_sum = params.size();
 
@@ -597,9 +597,9 @@ TEST_CASE("群目标测试", "[FunctionalityCheck][group_track]")
     for (size_t i = 0; i < points_all.size(); ++i)
     {
         auto [sigma_x, sigma_y] = extrapolator.getErrorDistribution(points_all[i].x, points_all[i].y);
-        LOG_INFO << "目标点迹[" << i << "]: x=" << points_all[i].x << ", y=" << points_all[i].y
-                 << ", sog=" << points_all[i].sog << ", cog=" << points_all[i].cog
-                 << ", sigma_x=" << sigma_x << ", sigma_y=" << sigma_y;
+        // LOG_INFO << "目标点迹[" << i << "]: x=" << points_all[i].x << ", y=" << points_all[i].y
+        //          << ", sog=" << points_all[i].sog << ", cog=" << points_all[i].cog
+        //          << ", sigma_x=" << sigma_x << ", sigma_y=" << sigma_y;
     }
 
     //*****************************************第一次处理数据***********************************************/
@@ -731,7 +731,7 @@ TEST_CASE("多目标测试", "[Benchmark][multi_track]")
     // 目标数量
     std::vector<int> target_num = {10, 10, 10, 10};
     int target_num_sum = std::accumulate(target_num.begin(), target_num.end(), 0);
-    int cluster_num = 200;
+    int cluster_num = 1960;
 
     // 目标创建
     auto points1 = generate_gaussian_points(target_num[0], 0, 280, 10, 280, 10, 100.0, 50.0, seed++);
@@ -741,11 +741,11 @@ TEST_CASE("多目标测试", "[Benchmark][multi_track]")
     auto points_cluster = std::vector<TrackPoint>(cluster_num);
     std::vector<double> cluster_param = {
         0,   // 统一时间戳
-        160, // 最小距离
-        270, // 最大距离
-        160, // 最小距离
-        270, // 最大距离
-        100, // 速度中心
+        00, // 最小距离
+        400, // 最大距离
+        00, // 最小距离
+        400, // 最大距离
+        00, // 速度中心
         50,  // 速度均值
     };
 
@@ -766,13 +766,16 @@ TEST_CASE("多目标测试", "[Benchmark][multi_track]")
     points_all.insert(points_all.end(), points2.begin(), points2.end());
     points_all.insert(points_all.end(), points3.begin(), points3.end());
     points_all.insert(points_all.end(), points4.begin(), points4.end());
+
+    double error_mean = 0.0;
     for (size_t i = 0; i < points_all.size(); ++i)
     {
         auto [sigma_x, sigma_y] = extrapolator.getErrorDistribution(points_all[i].x, points_all[i].y); // 预热误差分布表格
         // LOG_INFO << "目标点迹[" << i << "]: x=" << points_all[i].x << ", y=" << points_all[i].y
-        //          << ", longitude=" << points_all[i].longitude << ", latitude=" << points_all[i].latitude
-        //          << ", sigma_x=" << sigma_x << ", sigma_y=" << sigma_y;
+        //          << ", longitude=" << points_all[i].longitude << ", latitude=" << points_all[i].latitude;
+        error_mean += sqrt(sigma_x * sigma_x + sigma_y * sigma_y);
     }
+    LOG_INFO << "ATTANTION!!!  平均位置误差: " << error_mean / points_all.size() << " km";
 
     points_cluster = generate_uniform_points(cluster_num, cluster_param[0], cluster_param[1], cluster_param[2],
                                              cluster_param[3], cluster_param[4], cluster_param[5], cluster_param[6], cluster_seed[0]);
@@ -900,7 +903,7 @@ TEST_CASE("多目标测试", "[Benchmark][multi_track]")
         if (!track_valid)
         {
             false_track_count++;
-            LOG_INFO << "第" << i << "条航迹为假航迹";
+            // LOG_INFO << "第" << i << "条航迹为假航迹";
         }
         else
         {
@@ -936,6 +939,7 @@ TEST_CASE("多目标测试", "[Benchmark][multi_track]")
     LOG_INFO << "检测率: " << detection_rate << " %";
     LOG_INFO << "虚警率: " << false_alarm_rate << " %";
     LOG_INFO << "漏检率: " << missed_rate << " %";
+    LOG_INFO << "SEED: " << seed;
 }
 
 TEST_CASE("群目标测试", "[Benchmark][group_track]")
@@ -995,7 +999,9 @@ TEST_CASE("群目标测试", "[Benchmark][group_track]")
     //*****************************************第三次处理数据***********************************************/
     LOG_INFO << "第三批次处理 - 时间片 2";
     extrapolator.update(points_all, TIME_INTERVAL_S);
-    status = initiator.process(points_all, new_tracks);
+    std::vector<TrackPoint> lose_group = {points_all[0], points_all[2], points_all[3]}; // 模拟群目标中的一个目标突然消失
+    LOG_INFO << "模拟群目标中的一个目标突然消失，剩余点迹数: " << lose_group.size();
+    status = initiator.process(lose_group, new_tracks);
     REQUIRE(status == ProcessStatus::SUCCESS);
 
     //*****************************************第四次处理数据***********************************************/
