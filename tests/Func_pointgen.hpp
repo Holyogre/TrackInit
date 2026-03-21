@@ -132,7 +132,7 @@ std::vector<TrackPoint> generate_target_points_xyv(int64_t time, const std::vect
 
         // 计算SOG和COG
         p.sog = std::sqrt(p.vx * p.vx + p.vy * p.vy);
-        p.cog = std::atan2(p.vy, p.vx) * 180.0 / M_PI; // 北偏东，atan2(y,x)给出与x轴夹角
+        p.cog = std::atan2(p.vx, p.vy) * 180.0 / M_PI; // 北偏东，atan2(y,x)给出与x轴夹角
         if (p.cog < 0)
             p.cog += 360.0;
 

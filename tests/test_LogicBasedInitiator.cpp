@@ -560,19 +560,23 @@ TEST_CASE("群目标测试", "[FunctionalityCheck][group_track]")
 
     // 随机数种子
     unsigned int seed = Catch::getSeed();
-    seed = 42;
+    seed = 4053434269;
 
     // 群目标：4个同向同速、位置密集的目标
     std::vector<std::array<double, 4>> params = {
-        {80.0, 10.0, 80, 10},  // 目标1
-        {95.0, 10.0, 95, 10},  // 目标2，相距0.7km
-        {110.0, 10.0, 110, 10},  // 目标3，相距0.5km
-        {125.0, 10.0, 125, 10}   // 目标4，相距0.7km
+        {90.0, 10.0, 200, 10},  // 目标1
+        {95.0, 10.0, 200, 10},  // 目标2，相距0.7km
+        {100.0, 10.0, 200, 10}, // 目标3，相距0.5km
+        {105.0, 10.0, 200, 10}  // 目标4，相距0.7km
     };
     int target_num_sum = params.size();
 
     // 生成第一帧点迹
     auto points_all = generate_target_points_xyv(0, params);
+    points_all[0].sog = 1.0;
+    points_all[1].sog = 2.0;
+    points_all[2].sog = 3.0;
+    points_all[3].sog = 4.0;
     std::vector<std::array<TrackPoint, 4>> new_tracks(100);
 
     // 创建实例
@@ -589,7 +593,7 @@ TEST_CASE("群目标测试", "[FunctionalityCheck][group_track]")
 
     //****************************************预处理数据***********************************************/
     track_manager.clear_all_command();
-    
+
     for (size_t i = 0; i < points_all.size(); ++i)
     {
         auto [sigma_x, sigma_y] = extrapolator.getErrorDistribution(points_all[i].x, points_all[i].y);
@@ -612,7 +616,7 @@ TEST_CASE("群目标测试", "[FunctionalityCheck][group_track]")
     status = initiator.process(points_all, new_tracks);
     REQUIRE(status == ProcessStatus::SUCCESS);
     tester.printHypothesisDistribution();
-    
+
     //*****************************************第三次处理数据***********************************************/
     LOG_INFO << "第三批次处理 - 时间片 2";
     extrapolator.update(points_all, TIME_INTERVAL_S);
@@ -620,7 +624,7 @@ TEST_CASE("群目标测试", "[FunctionalityCheck][group_track]")
     status = initiator.process(points_all, new_tracks);
     REQUIRE(status == ProcessStatus::SUCCESS);
     tester.printHypothesisDistribution();
-    
+
     //*****************************************第四次处理数据***********************************************/
     LOG_INFO << "第四批次处理 - 时间片 3";
     extrapolator.update(points_all, TIME_INTERVAL_S);
@@ -646,8 +650,7 @@ TEST_CASE("群目标测试", "[FunctionalityCheck][group_track]")
             size_t point_match = 0;
             for (size_t k = 0; k < 4; ++k)
             {
-                if (std::abs(track[k].sog - points_all[j].sog) < 1e-4 &&
-                    std::abs(track[k].cog - points_all[j].cog) < 1e-4)
+                if (std::abs(track[k].sog - points_all[j].sog) < 1e-4) // sog已经改成标签了，直接用来当匹配标识了
                 {
                     point_match++;
                 }
@@ -681,6 +684,16 @@ TEST_CASE("群目标测试", "[FunctionalityCheck][group_track]")
         }
     }
 
+    // 遍历四条航迹的cog与点迹的cog对比，看误差是多少
+    double standard_cog = points_all[0].cog; // COG是一致的，毕竟群目标
+    double calculated_cog = 0.0;
+    for (size_t i = 0; i < new_tracks.size(); ++i)
+    {
+        const auto &label_cog = new_tracks[i][3].cog;
+        double cog_error = std::abs(label_cog - standard_cog);
+        calculated_cog += cog_error;
+    }
+
     int total_targets = points_all.size();
     int total_tracks = new_tracks.size();
     double detection_rate = (total_targets - missed_target_count) * 100.0 / total_targets;
@@ -694,7 +707,7 @@ TEST_CASE("群目标测试", "[FunctionalityCheck][group_track]")
     LOG_INFO << "漏检目标数: " << missed_target_count;
     LOG_INFO << "检测率: " << detection_rate << "%";
     LOG_INFO << "虚警率: " << false_alarm_rate << "%";
-
+    LOG_INFO << "航向一致性误差（平均）: " << calculated_cog / true_track_count << " deg";
 
     while (g_running)
     {
@@ -923,4 +936,146 @@ TEST_CASE("多目标测试", "[Benchmark][multi_track]")
     LOG_INFO << "检测率: " << detection_rate << " %";
     LOG_INFO << "虚警率: " << false_alarm_rate << " %";
     LOG_INFO << "漏检率: " << missed_rate << " %";
+}
+
+TEST_CASE("群目标测试", "[Benchmark][group_track]")
+{
+
+    // 随机数种子
+    unsigned int seed = Catch::getSeed();
+    // seed = 42;
+
+    // 群目标：4个同向同速、位置密集的目标
+    std::vector<std::array<double, 4>> params = {
+        {90.0, 10.0, 200, 10},  // 目标1
+        {95.0, 10.0, 200, 10},  // 目标2，相距0.7km
+        {100.0, 10.0, 200, 10}, // 目标3，相距0.5km
+        {105.0, 10.0, 200, 10}  // 目标4，相距0.7km
+    };
+    int target_num_sum = params.size();
+
+    // 生成第一帧点迹
+    auto points_all = generate_target_points_xyv(0, params);
+    points_all[0].sog = 1.0;
+    points_all[1].sog = 2.0;
+    points_all[2].sog = 3.0;
+    points_all[3].sog = 4.0;
+    std::vector<std::array<TrackPoint, 4>> new_tracks(100);
+
+    // 创建实例
+    LogicBasedInitiator initiator;
+    test_LogicBasedInitiator tester(initiator);
+    TrackExtrapolator extrapolator(seed);
+
+    // 绑定回调函数，显示航迹
+    initiator.set_track_callback([&](const std::vector<std::array<TrackPoint, 4>> &tracks)
+                                 { LOG_INFO << "回调函数被调用，生成了 " << tracks.size() << " 条航迹"; });
+
+    //****************************************预处理数据***********************************************/
+
+    for (size_t i = 0; i < points_all.size(); ++i)
+    {
+        auto [sigma_x, sigma_y] = extrapolator.getErrorDistribution(points_all[i].x, points_all[i].y);
+        // LOG_INFO << "目标点迹[" << i << "]: x=" << points_all[i].x << ", y=" << points_all[i].y
+        //          << ", sog=" << points_all[i].sog << ", cog=" << points_all[i].cog
+        //          << ", sigma_x=" << sigma_x << ", sigma_y=" << sigma_y;
+    }
+
+    //*****************************************第一次处理数据***********************************************/
+    LOG_INFO << "第一批次处理 - 时间片 0";
+    ProcessStatus status = initiator.process(points_all, new_tracks);
+    REQUIRE(status == ProcessStatus::SUCCESS);
+
+    //*****************************************第二次处理数据***********************************************/
+    LOG_INFO << "第二批次处理 - 时间片 1";
+    extrapolator.update(points_all, TIME_INTERVAL_S);
+    status = initiator.process(points_all, new_tracks);
+    REQUIRE(status == ProcessStatus::SUCCESS);
+
+    //*****************************************第三次处理数据***********************************************/
+    LOG_INFO << "第三批次处理 - 时间片 2";
+    extrapolator.update(points_all, TIME_INTERVAL_S);
+    status = initiator.process(points_all, new_tracks);
+    REQUIRE(status == ProcessStatus::SUCCESS);
+
+    //*****************************************第四次处理数据***********************************************/
+    LOG_INFO << "第四批次处理 - 时间片 3";
+    extrapolator.update(points_all, TIME_INTERVAL_S);
+    status = initiator.process(points_all, new_tracks);
+    REQUIRE(status == ProcessStatus::SUCCESS);
+
+    //*****************************************统计数据***********************************************/
+    int true_track_count = 0;
+    int false_track_count = 0;
+    int missed_target_count = 0;
+    std::vector<bool> target_matched(points_all.size(), false);
+
+    for (size_t i = 0; i < new_tracks.size(); ++i)
+    {
+        const auto &track = new_tracks[i];
+        bool track_valid = false;
+
+        for (size_t j = 0; j < points_all.size(); ++j)
+        {
+            size_t point_match = 0;
+            for (size_t k = 0; k < 4; ++k)
+            {
+                if (std::abs(track[k].sog - points_all[j].sog) < 1e-4) // sog已经改成标签了，直接用来当匹配标识了
+                {
+                    point_match++;
+                }
+            }
+
+            if (point_match > 2)
+            {
+                track_valid = true;
+                target_matched[j] = true;
+                break;
+            }
+        }
+
+        if (!track_valid)
+        {
+            false_track_count++;
+            LOG_INFO << "第" << i << "条航迹为假航迹";
+        }
+        else
+        {
+            true_track_count++;
+        }
+    }
+
+    for (size_t j = 0; j < points_all.size(); ++j)
+    {
+        if (!target_matched[j])
+        {
+            missed_target_count++;
+            LOG_INFO << "第" << j << "个目标未被检测到";
+        }
+    }
+
+    // 遍历四条航迹的cog与点迹的cog对比，看误差是多少
+    double standard_cog = points_all[0].cog; // COG是一致的，毕竟群目标
+    double calculated_cog = 0.0;
+    for (size_t i = 0; i < new_tracks.size(); ++i)
+    {
+        const auto &label_cog = new_tracks[i][3].cog;
+        double cog_error = std::abs(label_cog - standard_cog);
+        calculated_cog += cog_error;
+    }
+
+    int total_targets = points_all.size();
+    int total_tracks = new_tracks.size();
+    double detection_rate = (total_targets - missed_target_count) * 100.0 / total_targets;
+    double false_alarm_rate = false_track_count * 100.0 / total_tracks;
+
+    LOG_INFO << "========== 群目标统计结果 ==========";
+    LOG_INFO << "真实目标数: " << total_targets;
+    LOG_INFO << "生成航迹数: " << total_tracks;
+    LOG_INFO << "正确航迹数: " << true_track_count;
+    LOG_INFO << "虚警航迹数: " << false_track_count;
+    LOG_INFO << "漏检目标数: " << missed_target_count;
+    LOG_INFO << "检测率: " << detection_rate << " %";
+    LOG_INFO << "虚警率: " << false_alarm_rate << " %";
+    LOG_INFO << "航向一致性误差（平均）: " << calculated_cog / true_track_count << " deg";
 }

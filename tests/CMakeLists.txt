@@ -75,6 +75,6 @@ add_track_test(test_LogicBasedInitiator
 # add_test(NAME bitARRAY全面测试 COMMAND test_BitArray "[bitarray][]")
 # add_test(NAME HoughSlice功能测试 COMMAND test_HoughSlice "[Benchmark]")
 
-# add_test(NAME LogicBasedInitiator功能测试 COMMAND test_LogicBasedInitiator "[FunctionalityCheck][multi_track]")
-add_test(NAME LogicBasedInitiator性能测试 COMMAND test_LogicBasedInitiator "[FunctionalityCheck][group_track]")
+add_test(NAME LogicBasedInitiator功能测试 COMMAND test_LogicBasedInitiator "[FunctionalityCheck][group_track]")
+add_test(NAME LogicBasedInitiator性能测试 COMMAND test_LogicBasedInitiator "[Benchmark][group_track]")
 

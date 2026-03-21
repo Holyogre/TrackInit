@@ -492,12 +492,16 @@ namespace track_project::trackinit
                    "depth=3的假设节点及其父节点必须都关联有效点迹");
 
             // debug
-            LOG_DEBUG << "heading范围: [" << best_node.heading_start << ", " << best_node.heading_end << "], confidence: " << best_node.confidence;
+            LOG_DEBUG << "heading范围: [" << best_node.heading_start * 180 / M_PI << ", "
+                      << best_node.heading_end * 180 / M_PI << "], confidence: " << best_node.confidence;
+            // cog参数赋值，用于TEST测试
+            auto debug_point = *(best_node.associated_point);
+            debug_point.cog = (best_node.heading_start + best_node.heading_end) / 2.0 / M_PI * 180; // 弧度
 
             new_tracks.push_back({*(best_node.parent_node->parent_node->parent_node->associated_point),
                                   *(best_node.parent_node->parent_node->associated_point),
                                   *(best_node.parent_node->associated_point),
-                                  *(best_node.associated_point)});
+                                  debug_point});
         }
 
         return ProcessStatus::SUCCESS;
