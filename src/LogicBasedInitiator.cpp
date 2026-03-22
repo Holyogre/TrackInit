@@ -56,6 +56,10 @@ namespace track_project::trackinit
             double sigma_x = std::sqrt(sigma_x2);
             double sigma_y = std::sqrt(sigma_y2);
 
+            //debug 
+            sigma_x=1.568;
+            sigma_y=1.568;
+
             error_distribution_table_[i] = std::make_pair(sigma_x, sigma_y);
         }
     }

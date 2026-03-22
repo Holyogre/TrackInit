@@ -731,7 +731,7 @@ TEST_CASE("多目标测试", "[Benchmark][multi_track]")
     // 目标数量
     std::vector<int> target_num = {10, 10, 10, 10};
     int target_num_sum = std::accumulate(target_num.begin(), target_num.end(), 0);
-    int cluster_num = 1960;
+    int cluster_num = 200;
 
     // 目标创建
     auto points1 = generate_gaussian_points(target_num[0], 0, 280, 10, 280, 10, 100.0, 50.0, seed++);
@@ -741,11 +741,11 @@ TEST_CASE("多目标测试", "[Benchmark][multi_track]")
     auto points_cluster = std::vector<TrackPoint>(cluster_num);
     std::vector<double> cluster_param = {
         0,   // 统一时间戳
-        00, // 最小距离
-        400, // 最大距离
-        00, // 最小距离
-        400, // 最大距离
-        00, // 速度中心
+        140, // 最小距离
+        290, // 最大距离
+        140, // 最小距离
+        290, // 最大距离
+        00,  // 速度中心
         50,  // 速度均值
     };
 
@@ -776,6 +776,7 @@ TEST_CASE("多目标测试", "[Benchmark][multi_track]")
         error_mean += sqrt(sigma_x * sigma_x + sigma_y * sigma_y);
     }
     LOG_INFO << "ATTANTION!!!  平均位置误差: " << error_mean / points_all.size() << " km";
+    LOG_INFO << "典型误差" << extrapolator.getErrorDistribution(200, 200).first<<"," << extrapolator.getErrorDistribution(200, 200).second << " km";
 
     points_cluster = generate_uniform_points(cluster_num, cluster_param[0], cluster_param[1], cluster_param[2],
                                              cluster_param[3], cluster_param[4], cluster_param[5], cluster_param[6], cluster_seed[0]);
