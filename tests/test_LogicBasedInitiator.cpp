@@ -373,20 +373,29 @@ TEST_CASE("多目标测试", "[FunctionalityCheck][multi_track]")
 
     // 随机数种子
     unsigned int seed = Catch::getSeed();
-    // seed = 1343091126;
+    // seed = 2939061879;
     unsigned int cluster_seed[4] = {seed + 1, seed + 2, seed + 3, seed + 4};
 
     // 目标数量
     std::vector<int> target_num = {10, 10, 10, 10};
     int target_num_sum = std::accumulate(target_num.begin(), target_num.end(), 0);
-    int cluster_num = 200;
+    int cluster_num = 1600;
 
     // 目标创建
-    auto points1 = generate_gaussian_points(target_num[0], 0, 250, 10, 150, 10, 100.0, 50.0, seed++);
-    auto points2 = generate_gaussian_points(target_num[1], 0, 180, 10, 280, 10, 100.0, 50.0, seed++);
-    auto points3 = generate_gaussian_points(target_num[2], 0, 180, 10, 150, 10, 100.0, 50.0, seed++);
-    auto points4 = generate_gaussian_points(target_num[3], 0, 250, 10, 280, 10, 100.0, 50.0, seed++);
+    auto points1 = generate_gaussian_points(target_num[0], 0, 150, 10, 280, 10, 100.0, 50.0, seed++);
+    auto points2 = generate_gaussian_points(target_num[1], 0, 150, 10, 150, 10, 100.0, 50.0, seed++);
+    auto points3 = generate_gaussian_points(target_num[2], 0, 280, 10, 150, 10, 100.0, 50.0, seed++);
+    auto points4 = generate_gaussian_points(target_num[3], 0, 280, 10, 280, 10, 100.0, 50.0, seed++);
     auto points_cluster = std::vector<TrackPoint>(cluster_num);
+    std::vector<double> cluster_param = {
+        0,   // 统一时间戳
+        150, // 最小距离
+        280, // 最大距离
+        150, // 最小距离
+        280, // 最大距离
+        100, // 速度中心
+        50,  // 速度均值
+    };
 
     // 输入和输出
     std::vector<TrackPoint> points_all; // 所有点迹
@@ -394,9 +403,9 @@ TEST_CASE("多目标测试", "[FunctionalityCheck][multi_track]")
 
     // 创建实例
     LogicBasedInitiator initiator;
-    test_LogicBasedInitiator tester(initiator);                             // DEBUG容器
-    TrackExtrapolator extrapolator(seed);                                   // 使用相同的随机数种子创建航迹外推器，保证噪声的一致性
-    track_project::ManagementService track_manager(0.35, 1.65, 0.35, 1.65); // 恢复原来的范围
+    test_LogicBasedInitiator tester(initiator);                         // DEBUG容器
+    TrackExtrapolator extrapolator(seed);                               // 使用相同的随机数种子创建航迹外推器，保证噪声的一致性
+    track_project::ManagementService track_manager(1.1, 2.7, 1.1, 2.7); // 恢复原来的范围
 
     // 绑定回调函数，显示航迹
     initiator.set_track_callback([&track_manager](const std::vector<std::array<TrackPoint, 4>> &tracks)
@@ -418,7 +427,8 @@ TEST_CASE("多目标测试", "[FunctionalityCheck][multi_track]")
                  << ", sigma_x=" << sigma_x << ", sigma_y=" << sigma_y;
     }
 
-    points_cluster = generate_uniform_points(cluster_num, 0, 60, 170, 60, 170, 150, 100, cluster_seed[0]);
+    points_cluster = generate_uniform_points(cluster_num, cluster_param[0], cluster_param[1], cluster_param[2],
+                                             cluster_param[3], cluster_param[4], cluster_param[5], cluster_param[6], cluster_seed[0]);
     points_all.insert(points_all.end(), points_cluster.begin(), points_cluster.end());
 
     //*****************************************第一次处理数据***********************************************/
@@ -433,7 +443,8 @@ TEST_CASE("多目标测试", "[FunctionalityCheck][multi_track]")
     points_all.resize(target_num_sum);
     extrapolator.update(points_all, TIME_INTERVAL_S);
     // 重置杂波点
-    points_cluster = generate_uniform_points(cluster_num, 0, 60, 170, 60, 170, 150, 100, cluster_seed[1]);
+    points_cluster = generate_uniform_points(cluster_num, cluster_param[0], cluster_param[1], cluster_param[2],
+                                             cluster_param[3], cluster_param[4], cluster_param[5], cluster_param[6], cluster_seed[1]);
     points_all.insert(points_all.end(), points_cluster.begin(), points_cluster.end());
 
     track_manager.draw_point_command(points_all);
@@ -445,7 +456,8 @@ TEST_CASE("多目标测试", "[FunctionalityCheck][multi_track]")
     points_all.resize(target_num_sum);
     extrapolator.update(points_all, TIME_INTERVAL_S);
     // 重置杂波点
-    points_cluster = generate_uniform_points(cluster_num, 0, 60, 170, 60, 170, 150, 100, cluster_seed[2]);
+    points_cluster = generate_uniform_points(cluster_num, cluster_param[0], cluster_param[1], cluster_param[2],
+                                             cluster_param[3], cluster_param[4], cluster_param[5], cluster_param[6], cluster_seed[2]);
     points_all.insert(points_all.end(), points_cluster.begin(), points_cluster.end());
 
     track_manager.draw_point_command(points_all);
@@ -457,7 +469,8 @@ TEST_CASE("多目标测试", "[FunctionalityCheck][multi_track]")
     points_all.resize(target_num_sum);
     extrapolator.update(points_all, TIME_INTERVAL_S);
     // 重置杂波点
-    points_cluster = generate_uniform_points(cluster_num, 0, 60, 170, 60, 170, 150, 100, cluster_seed[3]);
+    points_cluster = generate_uniform_points(cluster_num, cluster_param[0], cluster_param[1], cluster_param[2],
+                                             cluster_param[3], cluster_param[4], cluster_param[5], cluster_param[6], cluster_seed[3]);
     points_all.insert(points_all.end(), points_cluster.begin(), points_cluster.end());
 
     // 绘制点迹
@@ -560,14 +573,14 @@ TEST_CASE("群目标测试", "[FunctionalityCheck][group_track]")
 
     // 随机数种子
     unsigned int seed = Catch::getSeed();
-    seed = 4053434269;
+    // seed = 4053434269;
 
     // 群目标：4个同向同速、位置密集的目标
     std::vector<std::array<double, 4>> params = {
-        {90.0, 10.0, 200, 10}, // 目标1
-        {94.0, 10.0, 200, 10}, // 目标2，相距0.7km
-        {98.0, 10.0, 200, 10}, // 目标3，相距0.5km
-        {102.0, 10.0, 200, 10} // 目标4，相距0.7km
+        {90.0, 100.0, 200, 10},  // 目标1
+        {95.0, 100.0, 200, 10},  // 目标2，相距0.7km
+        {100.0, 100.0, 200, 10}, // 目标3，相距0.5km
+        {105.0, 100.0, 200, 10}  // 目标4，相距0.7km
     };
     int target_num_sum = params.size();
 
@@ -583,7 +596,7 @@ TEST_CASE("群目标测试", "[FunctionalityCheck][group_track]")
     LogicBasedInitiator initiator;
     test_LogicBasedInitiator tester(initiator);
     TrackExtrapolator extrapolator(seed);
-    track_project::ManagementService track_manager(0.60, 1.40, 0.08, 0.16);
+    track_project::ManagementService track_manager(0.70, 1.20, 0.85, 0.95);
 
     // 绑定回调函数，显示航迹
     initiator.set_track_callback([&track_manager](const std::vector<std::array<TrackPoint, 4>> &tracks)
@@ -597,9 +610,9 @@ TEST_CASE("群目标测试", "[FunctionalityCheck][group_track]")
     for (size_t i = 0; i < points_all.size(); ++i)
     {
         auto [sigma_x, sigma_y] = extrapolator.getErrorDistribution(points_all[i].x, points_all[i].y);
-        // LOG_INFO << "目标点迹[" << i << "]: x=" << points_all[i].x << ", y=" << points_all[i].y
-        //          << ", sog=" << points_all[i].sog << ", cog=" << points_all[i].cog
-        //          << ", sigma_x=" << sigma_x << ", sigma_y=" << sigma_y;
+        LOG_INFO << "目标点迹[" << i << "]: x=" << points_all[i].x << ", y=" << points_all[i].y
+                 << ", sog=" << points_all[i].sog << ", cog=" << points_all[i].cog
+                 << ", sigma_x=" << sigma_x << ", sigma_y=" << sigma_y;
     }
 
     //*****************************************第一次处理数据***********************************************/
@@ -620,6 +633,8 @@ TEST_CASE("群目标测试", "[FunctionalityCheck][group_track]")
     //*****************************************第三次处理数据***********************************************/
     LOG_INFO << "第三批次处理 - 时间片 2";
     extrapolator.update(points_all, TIME_INTERVAL_S);
+    std::vector<TrackPoint> lose_group = {points_all[0], points_all[2], points_all[3]}; // 模拟群目标中的一个目标突然消失
+    LOG_INFO << "模拟群目标中的一个目标突然消失，剩余点迹数: " << lose_group.size();
     track_manager.draw_point_command(points_all);
     status = initiator.process(points_all, new_tracks);
     REQUIRE(status == ProcessStatus::SUCCESS);
@@ -776,7 +791,7 @@ TEST_CASE("多目标测试", "[Benchmark][multi_track]")
         error_mean += sqrt(sigma_x * sigma_x + sigma_y * sigma_y);
     }
     LOG_INFO << "ATTANTION!!!  平均位置误差: " << error_mean / points_all.size() << " km";
-    LOG_INFO << "典型误差" << extrapolator.getErrorDistribution(200, 200).first<<"," << extrapolator.getErrorDistribution(200, 200).second << " km";
+    LOG_INFO << "典型误差" << extrapolator.getErrorDistribution(200, 200).first << "," << extrapolator.getErrorDistribution(200, 200).second << " km";
 
     points_cluster = generate_uniform_points(cluster_num, cluster_param[0], cluster_param[1], cluster_param[2],
                                              cluster_param[3], cluster_param[4], cluster_param[5], cluster_param[6], cluster_seed[0]);

@@ -37,8 +37,12 @@ namespace track_project::trackmanager
             cv::line(bg_img, cv::Point(x, 0), cv::Point(x, height), grid_color, 1);
 
             // 经度标签
+            // double lon = lon_min + ratio * (lon_max - lon_min);
+            // cv::putText(bg_img, cv::format("%.2f", lon),
+            //             cv::Point(x + 2, height - 30), font, font_scale, text_color, 1);
             double lon = lon_min + ratio * (lon_max - lon_min);
-            cv::putText(bg_img, cv::format("%.2f", lon),
+            double x_km = lon * 110.0;
+            cv::putText(bg_img, cv::format("%.2f", x_km),
                         cv::Point(x + 2, height - 30), font, font_scale, text_color, 1);
 
             // 纬度线（横线）
@@ -46,10 +50,20 @@ namespace track_project::trackmanager
             cv::line(bg_img, cv::Point(0, y), cv::Point(width, y), grid_color, 1);
 
             // 纬度标签
+            // double lat = lat_max - ratio * (lat_max - lat_min);
+            // cv::putText(bg_img, cv::format("%.2f", lat),
+            //             cv::Point(5, y - 2), font, font_scale, text_color, 1);
             double lat = lat_max - ratio * (lat_max - lat_min);
-            cv::putText(bg_img, cv::format("%.2f", lat),
-                        cv::Point(5, y - 2), font, font_scale, text_color, 1);
+            double y_km = lat * 110.0;
+            cv::putText(bg_img, cv::format("%.2f", y_km),
+                        cv::Point(5, y - 10), font, font_scale, text_color, 1);
         }
+
+        // 轴标题：右下角标注 x(km)，左上角标注 y(km)
+        cv::putText(bg_img, "x(km)",
+                    cv::Point(width - 120, height - 40), font, font_scale, text_color, 2);
+        cv::putText(bg_img, "y(km)",
+                    cv::Point(5, 30), font, font_scale, text_color, 2);
 
         active_track_ids.reserve(track_size);
         track_points.reserve(track_length);

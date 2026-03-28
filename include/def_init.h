@@ -25,9 +25,9 @@ namespace track_project::trackinit
     constexpr double LOGIC_BASED_HEADING_RESOLUTION_DEG = 1.0;  // 航向离散分辨率（度），迅速提高虚假航迹分辨率，但是计算复杂度也会迅速提升，O(N)
     constexpr size_t LOGIC_BASED_MAX_NODE_PER_BINS = 100;       // 每个波门中允许拥有的最大假设数量,建议设置为n^2，减枝一次O(N)
     constexpr double LOGIC_BASED_PROTECTIVE_RADIUS_KM = 0.1;    // 保护半径（KM），误差分布函数不一定准确，以防万一设置的扩张值，谨慎修改，非DEBUG最好是0
-    constexpr double LOGIC_BASED_PROTECTIVE_DOPPLER_M_S = 0.8; // doppler保护半径,这个保护半径用于抑制波动值，可以适当给大点
+    constexpr double LOGIC_BASED_PROTECTIVE_DOPPLER_M_S = 0.1; // doppler保护半径,这个保护半径用于抑制波动值，可以适当给大点
     // ============ LOGIC BASED 减枝参数 ============
-    constexpr size_t LOGIC_BASED_K_BEST = 2;                       // K-Best算法中K的值，用于保留最优K个值
+    constexpr size_t LOGIC_BASED_K_BEST = 1;                       // K-Best算法中K的值，用于保留最优K个值
     constexpr double LOGIC_BASED_DISTANCE_CONFIDENCE_WEIGHT = 0.5; // 距离置信度权重
     constexpr double LOGIC_BASED_HEADING_CONFIDENCE_WEIGHT = 0.5;  // 航向置信度权重
 
