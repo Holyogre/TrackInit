@@ -61,8 +61,14 @@ endfunction()
 #     ../src/Func_dbscan.cpp
 #     ${MYUTILS_SOURCES}
 #     ${TRACKMANAGER_SOURCES})
-add_track_test(test_LogicBasedInitiator
-    test_LogicBasedInitiator.cpp
+# add_track_test(test_LogicBasedInitiator
+#     test_LogicBasedInitiator.cpp
+#     ../src/LogicBasedInitiator.cpp
+#     ${MYUTILS_SOURCES}
+#     ${TRACKMANAGER_SOURCES})
+
+add_track_test(test_RealData
+    Real_data_test.cpp
     ../src/LogicBasedInitiator.cpp
     ${MYUTILS_SOURCES}
     ${TRACKMANAGER_SOURCES})
@@ -74,7 +80,6 @@ add_track_test(test_LogicBasedInitiator
 # add_test(NAME ClustDBSCAN COMMAND test_ClustDBSCAN "[dbscan][]")
 # add_test(NAME bitARRAY全面测试 COMMAND test_BitArray "[bitarray][]")
 # add_test(NAME HoughSlice功能测试 COMMAND test_HoughSlice "[Benchmark]")
-
-add_test(NAME LogicBasedInitiator功能测试 COMMAND test_LogicBasedInitiator "[FunctionalityCheck][multi_track]")
-# add_test(NAME LogicBasedInitiator性能测试 COMMAND test_LogicBasedInitiator "[Benchmark][multi_track]")
+# add_test(NAME LogicBasedInitiator功能测试 COMMAND test_LogicBasedInitiator "[FunctionalityCheck][multi_track]")
+add_test(NAME LogicBasedInitiator实测数据测试 COMMAND test_RealData "[FunctionalityCheck][real_data]")
 
